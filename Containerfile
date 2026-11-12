@@ -18,9 +18,17 @@ RUN git clone --depth 1 https://github.com/ggml-org/llama.cpp.git && \
       -DGGML_BACKEND_DL=ON \
       -DGGML_CPU_ALL_VARIANTS=ON \
       -DGGML_VULKAN=ON \
-      -DGGML_NATIVE=OFF && \
+      -DGGML_NATIVE=OFF \
+      -DLLAMA_BUILD_TESTS=OFF \
+      -DGGML_BUILD_TESTS=OFF \
+      -DLLAMA_BUILD_EXAMPLES=OFF \
+      -DLLAMA_BUILD_SERVER=ON && \
     cmake --build build-llama --target llama-server llama-cli -j"$(nproc)" && \
-    cmake --install build-llama --prefix /opt/ai-out
+    (cmake --install build-llama --prefix /opt/ai-out || ( \
+      mkdir -p /opt/ai-out/bin /opt/ai-out/lib64 && \
+      install -Dm755 build-llama/bin/llama* /opt/ai-out/bin/ && \
+      find build-llama -name "*.so*" -exec cp -d {} /opt/ai-out/lib64/ \; \
+    ))
 
 # Build whisper.cpp for fast push-to-talk voice prompt transcription (0 MB VRAM)
 RUN git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git && \
@@ -31,7 +39,7 @@ RUN git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git && \
     cmake --build build-whisper --target whisper-cli -j"$(nproc)" && \
     install -Dm755 build-whisper/bin/whisper-cli /opt/ai-out/bin/whisper-cli
 
-# Stage 2: Build Rust tools (DriftWM + driftwm-settings under safe x86-64-v2 ISA)
+# Stage 2: Build Rust tools (DriftWM under safe x86-64-v2 ISA)
 FROM registry.fedoraproject.org/fedora:43 AS rust-builder
 
 RUN dnf install -y --setopt=install_weak_deps=False --skip-unavailable \
@@ -46,10 +54,6 @@ WORKDIR /build
 RUN git clone --depth 1 https://github.com/malbiruk/driftwm.git && \
     cargo build --release --manifest-path driftwm/Cargo.toml && \
     install -Dm755 driftwm/target/release/driftwm /opt/rust-out/usr/local/bin/driftwm
-
-RUN (git clone --depth 1 https://github.com/wwmaxik/driftwm-settings.git && \
-     cargo build --release --manifest-path driftwm-settings/Cargo.toml && \
-     install -Dm755 driftwm-settings/target/release/driftwm-settings /opt/rust-out/usr/local/bin/driftwm-settings) || true
 
 # Stage 3: Download non-packaged developer CLI binaries (llama-swap, jj, mise, ast-grep, pueue, zellij, yazi)
 FROM registry.fedoraproject.org/fedora:43 AS tools-downloader
@@ -106,7 +110,9 @@ RUN npm install -g @opencode/cli || curl -fsSL https://opencode.ai/v2/install | 
 COPY --from=llama-builder /opt/ai-out/ /usr/local/
 COPY --from=rust-builder /opt/rust-out/ /
 COPY --from=tools-downloader /opt/tools/bin/ /usr/local/bin/
-RUN ldconfig
+RUN echo "/usr/local/lib64" > /etc/ld.so.conf.d/local-ai.conf && \
+    echo "/usr/local/lib" >> /etc/ld.so.conf.d/local-ai.conf && \
+    ldconfig
 
 # System configuration, udev rules (152d:0578 + host isolation), GPU detect & AI profiles
 COPY system/etc/ /etc/
