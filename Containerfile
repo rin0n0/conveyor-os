@@ -45,9 +45,9 @@ RUN git clone --depth 1 https://github.com/malbiruk/driftwm.git && \
     cargo build --release --manifest-path driftwm/Cargo.toml && \
     install -Dm755 driftwm/target/release/driftwm /opt/rust-out/usr/local/bin/driftwm
 
-RUN git clone --depth 1 https://github.com/wwmaxik/driftwm-settings.git && \
-    cargo build --release --manifest-path driftwm-settings/Cargo.toml && \
-    install -Dm755 driftwm-settings/target/release/driftwm-settings /opt/rust-out/usr/local/bin/driftwm-settings || true
+RUN (git clone --depth 1 https://github.com/wwmaxik/driftwm-settings.git && \
+     cargo build --release --manifest-path driftwm-settings/Cargo.toml && \
+     install -Dm755 driftwm-settings/target/release/driftwm-settings /opt/rust-out/usr/local/bin/driftwm-settings) || true
 
 # Stage 3: Download non-packaged developer CLI binaries (llama-swap, jj, mise, ast-grep, pueue, zellij, yazi)
 FROM registry.fedoraproject.org/fedora:43 AS tools-downloader
@@ -66,11 +66,11 @@ RUN set -eux; \
     # mise (polyglot runtime & env manager)
     curl -fsSL https://mise.jdx.dev/mise-latest-linux-x64 -o /opt/tools/bin/mise; \
     # ast-grep (AST-based code intelligence & structural search)
-    SG_URL=$(curl -fsSL https://api.github.com/repos/ast-grep/ast-grep/releases/latest | jq -r '.assets[] | select(.name | test("x86_64-unknown-linux-gnu.tar.gz$")) | .browser_download_url' | head -n1); \
-    if [ -n "$SG_URL" ]; then curl -fsSL "$SG_URL" | tar -xz -C /opt/tools/bin ast-grep; fi; \
+    curl -fsSL https://github.com/ast-grep/ast-grep/releases/latest/download/app-x86_64-unknown-linux-gnu.zip -o /tmp/ast-grep.zip && \
+    unzip -q -o /tmp/ast-grep.zip -d /opt/tools/bin && rm -f /tmp/ast-grep.zip; \
     # pueue & pueued (lightweight daemon for background batch tasks & MoE queues)
-    curl -fsSL https://github.com/Nukesor/pueue/releases/latest/download/pueue-linux-x86_64 -o /opt/tools/bin/pueue; \
-    curl -fsSL https://github.com/Nukesor/pueue/releases/latest/download/pueued-linux-x86_64 -o /opt/tools/bin/pueued; \
+    curl -fsSL https://github.com/Nukesor/pueue/releases/latest/download/pueue-x86_64-unknown-linux-musl -o /opt/tools/bin/pueue; \
+    curl -fsSL https://github.com/Nukesor/pueue/releases/latest/download/pueued-x86_64-unknown-linux-musl -o /opt/tools/bin/pueued; \
     # zellij (terminal multiplexer with Attention Inbox)
     curl -fsSL https://github.com/zellij-org/zellij/releases/latest/download/zellij-x86_64-unknown-linux-musl.tar.gz | tar -xz -C /opt/tools/bin; \
     # yazi (terminal file manager with Sixel support)
@@ -93,7 +93,7 @@ RUN dnf install -y --setopt=install_weak_deps=False --skip-unavailable \
     bubblewrap podman zram-generator systemd-oomd nftables \
     NetworkManager-wifi usb_modeswitch usbutils pciutils vulkan-tools \
     mesa-dri-drivers mesa-vulkan-drivers \
-    python3 python3-pip uv nodejs pnpm clang lld sccache ccache && \
+    python3 python3-pip uv nodejs npm pnpm clang lld sccache ccache && \
     dnf clean all
 
 # Install CLI coding agents: aider-chat & opencode
