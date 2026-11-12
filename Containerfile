@@ -1,7 +1,7 @@
 # Stage 1: Build universal llama.cpp + whisper.cpp (Dynamic backends: Vulkan + CPU ISA variants)
 FROM registry.fedoraproject.org/fedora:43 AS llama-builder
 
-RUN dnf install -y --setopt=install_weak_deps=False \
+RUN dnf install -y --setopt=install_weak_deps=False --skip-unavailable \
     git cmake ninja-build gcc-c++ vulkan-headers vulkan-loader-devel \
     glslc spirv-tools libcurl-devel && \
     dnf clean all
@@ -32,10 +32,10 @@ RUN git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git && \
 # Stage 2: Build Rust tools (DriftWM + driftwm-settings under safe x86-64-v2 ISA)
 FROM registry.fedoraproject.org/fedora:43 AS rust-builder
 
-RUN dnf install -y --setopt=install_weak_deps=False \
+RUN dnf install -y --setopt=install_weak_deps=False --skip-unavailable \
     git cargo rust clang pkgconf-pkg-config \
     wayland-devel libxkbcommon-devel libinput-devel mesa-libgbm-devel \
-    seatd-devel libdisplay-info-devel systemd-devel && \
+    libseat-devel libdisplay-info-devel systemd-devel && \
     dnf clean all
 
 ENV RUSTFLAGS="-C target-cpu=x86-64-v2"
@@ -49,44 +49,45 @@ RUN git clone --depth 1 https://github.com/wwmaxik/driftwm-settings.git && \
     cargo build --release --manifest-path driftwm-settings/Cargo.toml && \
     install -Dm755 driftwm-settings/target/release/driftwm-settings /opt/rust-out/usr/local/bin/driftwm-settings || true
 
-# Stage 3: Download non-packaged developer CLI binaries (llama-swap, jj, mise, ast-grep, pueue, opencode)
+# Stage 3: Download non-packaged developer CLI binaries (llama-swap, jj, mise, ast-grep, pueue, zellij, yazi)
 FROM registry.fedoraproject.org/fedora:43 AS tools-downloader
 
-RUN dnf install -y --setopt=install_weak_deps=False curl tar gzip jq && dnf clean all
+RUN dnf install -y --setopt=install_weak_deps=False curl tar gzip jq unzip && dnf clean all
 WORKDIR /opt/tools
 
-# Download latest stable release binaries
 RUN set -eux; \
     mkdir -p /opt/tools/bin; \
     # llama-swap (unified OpenAI + Anthropic API reverse proxy)
-    curl -fsSL https://github.com/mostlygeek/llama-swap/releases/download/v0.7.3/llama-swap_linux_x86_64.tar.gz | tar -xz -C /opt/tools/bin llama-swap || \
-    curl -fsSL https://github.com/mostlygeek/llama-swap/releases/latest/download/llama-swap_linux_x86_64.tar.gz | tar -xz -C /opt/tools/bin llama-swap || true; \
+    SWAP_URL=$(curl -fsSL https://api.github.com/repos/mostlygeek/llama-swap/releases/latest | jq -r '.assets[] | select(.name | test("linux.*(amd64|x86_64).*tar.gz$")) | .browser_download_url' | head -n1); \
+    if [ -n "$SWAP_URL" ]; then curl -fsSL "$SWAP_URL" | tar -xz -C /opt/tools/bin llama-swap; fi; \
     # Jujutsu (jj VCS - fearless snapshots, no branch locking)
     JJ_URL=$(curl -fsSL https://api.github.com/repos/jj-vcs/jj/releases/latest | jq -r '.assets[] | select(.name | test("x86_64-unknown-linux-musl.tar.gz$")) | .browser_download_url' | head -n1); \
-    curl -fsSL "$JJ_URL" | tar -xz -C /opt/tools/bin --strip-components=1 ./jj || true; \
+    if [ -n "$JJ_URL" ]; then curl -fsSL "$JJ_URL" | tar -xz -C /opt/tools/bin --strip-components=1 ./jj; fi; \
     # mise (polyglot runtime & env manager)
     curl -fsSL https://mise.jdx.dev/mise-latest-linux-x64 -o /opt/tools/bin/mise; \
     # ast-grep (AST-based code intelligence & structural search)
     SG_URL=$(curl -fsSL https://api.github.com/repos/ast-grep/ast-grep/releases/latest | jq -r '.assets[] | select(.name | test("x86_64-unknown-linux-gnu.tar.gz$")) | .browser_download_url' | head -n1); \
-    curl -fsSL "$SG_URL" | tar -xz -C /opt/tools/bin ast-grep || true; \
-    # pueue (lightweight daemon for background batch tasks & MoE queues)
+    if [ -n "$SG_URL" ]; then curl -fsSL "$SG_URL" | tar -xz -C /opt/tools/bin ast-grep; fi; \
+    # pueue & pueued (lightweight daemon for background batch tasks & MoE queues)
     curl -fsSL https://github.com/Nukesor/pueue/releases/latest/download/pueue-linux-x86_64 -o /opt/tools/bin/pueue; \
     curl -fsSL https://github.com/Nukesor/pueue/releases/latest/download/pueued-linux-x86_64 -o /opt/tools/bin/pueued; \
-    # opencode (model-agnostic open-source terminal coding agent)
-    OC_URL=$(curl -fsSL https://api.github.com/repos/opencode-ai/opencode/releases/latest | jq -r '.assets[] | select(.name | test("linux-x64.tar.gz$")) | .browser_download_url' | head -n1); \
-    if [ -n "$OC_URL" ]; then curl -fsSL "$OC_URL" | tar -xz -C /opt/tools/bin opencode || true; fi; \
+    # zellij (terminal multiplexer with Attention Inbox)
+    curl -fsSL https://github.com/zellij-org/zellij/releases/latest/download/zellij-x86_64-unknown-linux-musl.tar.gz | tar -xz -C /opt/tools/bin; \
+    # yazi (terminal file manager with Sixel support)
+    curl -fsSL https://github.com/sxyazi/yazi/releases/latest/download/yazi-x86_64-unknown-linux-musl.zip -o /tmp/yazi.zip && \
+    unzip -q -j /tmp/yazi.zip "*/yazi" "*/ya" -d /opt/tools/bin && rm -f /tmp/yazi.zip; \
     chmod +x /opt/tools/bin/*
 
 # Stage 4: Bootable Immutable Fedora Atomic (bootc) OS Image
 FROM quay.io/fedora/fedora-bootc:43
 
 # Base firmware, Wayland sessions (DriftWM + Niri + Sway), Cockpit & Dev isolation
-RUN dnf install -y --setopt=install_weak_deps=False \
+RUN dnf install -y --setopt=install_weak_deps=False --skip-unavailable \
     linux-firmware \
     greetd tuigreet \
-    niri sway waybar fuzzel swaync kanshi \
-    foot zellij tmux neovim git lazygit git-delta difftastic \
-    ripgrep fd-find yazi btop nvtop \
+    niri sway waybar fuzzel SwayNotificationCenter kanshi \
+    foot tmux neovim git lazygit git-delta difftastic \
+    ripgrep fd-find btop nvtop \
     firefox pipewire wireplumber wl-clipboard cliphist wtype \
     xdg-desktop-portal xdg-desktop-portal-gtk xdg-desktop-portal-gnome \
     bubblewrap podman zram-generator systemd-oomd nftables \
@@ -95,8 +96,9 @@ RUN dnf install -y --setopt=install_weak_deps=False \
     python3 python3-pip uv nodejs pnpm clang lld sccache ccache && \
     dnf clean all
 
-# Install aider-chat CLI agent via uv globally into /usr/local
+# Install CLI coding agents: aider-chat & opencode
 RUN uv pip install --system --break-system-packages aider-chat || true
+RUN npm install -g @opencode/cli || curl -fsSL https://opencode.ai/v2/install | bash || true
 
 # Copy prebuilt universal binaries and tools
 COPY --from=llama-builder /opt/ai-out/ /usr/local/
