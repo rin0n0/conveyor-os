@@ -1,0 +1,2 @@
+# Prevent auto-mounting or desktop indexing of internal drives on host PCs
+SUBSYSTEM=="block", ENV{ID_BUS}!="usb", ENV{UDISKS_IGNORE}="1", ENV{UDISKS_AUTO}="0"

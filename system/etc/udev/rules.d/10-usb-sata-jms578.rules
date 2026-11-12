@@ -1,0 +1,6 @@
+# JMicron JMS578 (152d:0578) SATA-to-USB bridge rules
+# 1. Disable USB autosuspend so rootfs never drops idle
+ACTION=="add|change", ATTRS{idVendor}=="152d", ATTRS{idProduct}=="0578", SUBSYSTEM=="usb", TEST=="power/control", ATTR{power/control}="on"
+
+# 2. Enable SCSI UNMAP -> SATA TRIM when running under UAS
+ACTION=="add|change", ATTRS{idVendor}=="152d", ATTRS{idProduct}=="0578", SUBSYSTEM=="scsi_disk", ATTR{provisioning_mode}="unmap"

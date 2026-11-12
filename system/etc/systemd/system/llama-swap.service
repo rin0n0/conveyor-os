@@ -1,0 +1,14 @@
+[Unit]
+Description=llama-swap Local AI Model Router (OpenAI + Anthropic API on :8080)
+After=network.target boot-gpu-detect.service
+Requires=boot-gpu-detect.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/llama-swap --config /run/llama-swap-active.yaml --listen 127.0.0.1:8080
+Restart=on-failure
+RestartSec=3
+MemoryHigh=24G
+
+[Install]
+WantedBy=multi-user.target

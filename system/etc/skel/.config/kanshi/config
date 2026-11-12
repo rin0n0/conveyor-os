@@ -1,0 +1,19 @@
+# Kanshi auto-display configuration for portable USB boot
+# Automatically sets optimal resolution and HiDPI scale on arbitrary 2014-2026 screens
+
+profile default_single {
+    output * enable scale 1.0
+}
+
+profile laptop_hidpi {
+    output "eDP-1" enable scale 1.5
+}
+
+profile desktop_4k {
+    output "DP-1" enable mode 3840x2160 scale 2.0
+}
+
+profile dual_monitor {
+    output "eDP-1" enable scale 1.0 position 0,0
+    output "HDMI-A-1" enable scale 1.0 position 1920,0
+}

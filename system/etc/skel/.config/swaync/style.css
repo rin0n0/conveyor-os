@@ -1,0 +1,39 @@
+* {
+  font-family: "JetBrains Mono", monospace;
+}
+
+.control-center {
+  background: rgba(26, 27, 38, 0.95);
+  border: 2px solid #7aa2f7;
+  border-radius: 12px;
+  color: #c0caf5;
+  padding: 14px;
+}
+
+.notification-row {
+  outline: none;
+  margin: 6px 0;
+}
+
+.notification {
+  background: #24283b;
+  border-radius: 8px;
+  padding: 10px;
+  border: 1px solid #414868;
+}
+
+.notification-content {
+  color: #c0caf5;
+}
+
+.notification.critical {
+  border: 2px solid #f7768e;
+  background: #34222d;
+}
+
+.widget-dnd {
+  margin-top: 10px;
+  background: #24283b;
+  border-radius: 8px;
+  padding: 8px;
+}

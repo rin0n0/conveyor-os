@@ -1,0 +1,80 @@
+{
+    "layer": "top",
+    "position": "top",
+    "height": 32,
+    "spacing": 6,
+    "modules-left": [
+        "niri/workspaces",
+        "sway/workspaces",
+        "custom/project"
+    ],
+    "modules-center": [
+        "custom/agents",
+        "custom/pueue"
+    ],
+    "modules-right": [
+        "custom/vram",
+        "memory",
+        "cpu",
+        "pulseaudio",
+        "clock",
+        "tray"
+    ],
+    "niri/workspaces": {
+        "format": "{index}:{name}"
+    },
+    "sway/workspaces": {
+        "disable-scroll": true,
+        "all-outputs": true,
+        "format": "{name}"
+    },
+    "custom/project": {
+        "format": "📁 {}",
+        "exec": "cat /run/current-project 2>/dev/null || echo 'No Project'",
+        "interval": 3,
+        "tooltip": true
+    },
+    "custom/agents": {
+        "format": "{}",
+        "exec": "/usr/local/bin/waybar-agents.sh",
+        "return-type": "json",
+        "interval": 2,
+        "tooltip": true
+    },
+    "custom/pueue": {
+        "format": "{}",
+        "exec": "/usr/local/bin/waybar-pueue.sh",
+        "return-type": "json",
+        "interval": 3,
+        "tooltip": true
+    },
+    "custom/vram": {
+        "format": "{}",
+        "exec": "/usr/local/bin/waybar-vram.sh",
+        "return-type": "json",
+        "interval": 2,
+        "tooltip": true
+    },
+    "cpu": {
+        "format": " {usage}%",
+        "interval": 2
+    },
+    "memory": {
+        "format": " {used:0.1f}G/{total:0.1f}G",
+        "interval": 2
+    },
+    "pulseaudio": {
+        "format": "{icon} {volume}%",
+        "format-muted": "🔇 muted",
+        "format-icons": {
+            "default": ["🔈", "🔉", "🔊"]
+        }
+    },
+    "clock": {
+        "format": " {:%H:%M}",
+        "tooltip-format": "{:%Y-%m-%d | Week %V}"
+    },
+    "tray": {
+        "spacing": 8
+    }
+}

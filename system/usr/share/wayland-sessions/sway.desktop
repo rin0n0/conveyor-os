@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Sway (Lightweight 2014 Fallback)
+Comment=Minimal wlroots tiling compositor for legacy 2014 GPUs or llvmpipe
+Exec=/usr/local/bin/session-wrapper.sh sway
+Type=Application
+DesktopNames=sway

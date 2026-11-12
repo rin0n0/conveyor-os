@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Niri (1D Project Tapes)
+Comment=Scrollable-tiling Wayland compositor with Overview Mode (keyboard-first)
+Exec=/usr/local/bin/session-wrapper.sh niri-session
+Type=Application
+DesktopNames=niri

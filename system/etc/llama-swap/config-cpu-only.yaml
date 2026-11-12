@@ -1,0 +1,32 @@
+# Fallback Profile: Legacy 2014-2018 PC / 16 GB RAM / CPU-only (no heavy MoE OOM)
+# Uses llama.cpp dynamic CPU ISA dispatch (SSE4.2 / AVX / AVX2 / AVX-512)
+
+healthCheckTimeout: 300
+logLevel: info
+globalTTL: 600
+startPort: 10001
+
+models:
+  "gemma4-e4b-cpu":
+    cmd: >
+      llama-server
+      --model /var/lib/models/gemma-4-E4B-it-Q4_K_M.gguf
+      --port ${PORT}
+      --host 127.0.0.1
+      -ngl 0
+      --ctx-size 16384
+      --jinja
+    aliases: ["fast-triage", "local-fast"]
+    ttl: 600
+
+  "qwen3-embed":
+    cmd: >
+      llama-server
+      --model /var/lib/models/Qwen3-Embedding-0.6B-Q8_0.gguf
+      --port ${PORT}
+      --host 127.0.0.1
+      -ngl 0
+      --embeddings
+      --pooling last
+    aliases: ["rag-embed"]
+    ttl: 600

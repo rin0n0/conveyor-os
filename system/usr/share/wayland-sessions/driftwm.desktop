@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=DriftWM (2D Infinite Canvas)
+Comment=Trackpad-first 2D spatial canvas Wayland compositor for multi-project cockpit
+Exec=/usr/local/bin/session-wrapper.sh driftwm
+Type=Application
+DesktopNames=driftwm

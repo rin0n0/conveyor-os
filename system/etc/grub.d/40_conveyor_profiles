@@ -1,0 +1,11 @@
+#!/bin/sh
+# Custom GRUB2 portable boot profiles for Intel SSD 545s + JMS578 (152d:0578)
+exec tail -n +3 "$0"
+# This file provides an easy way to add custom menu entries.
+
+menuentry "Conveyor OS (Safe Hardware: JMS578 BOT + No-GPU-Accel)" {
+    insmod ext2
+    search --no-floppy --label --set=root BOOT
+    linux /ostree/default/vmlinuz root=LABEL=CONVEYOR rootflags=subvol=@root rd.auto=1 rootwait usbcore.autosuspend=-1 usb-storage.quirks=152d:0578:u rd.driver.blacklist=nvidia,nvidia_drm,nvidia_modeset,nvidia_uvm,nouveau nomodeset
+    initrd /ostree/default/initramfs.img
+}

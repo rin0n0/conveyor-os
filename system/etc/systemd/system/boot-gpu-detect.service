@@ -1,0 +1,13 @@
+[Unit]
+Description=Dynamic 2014-2026 GPU/CPU/RAM Hardware Probe for Portable USB Boot
+DefaultDependencies=no
+Before=systemd-udev-trigger.service display-manager.service greetd.service
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/boot-gpu-detect.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
