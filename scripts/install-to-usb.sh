@@ -69,10 +69,23 @@ echo "[4/6] Deploying bootc container image into filesystem..."
 if command -v bootc >/dev/null 2>&1; then
     bootc install to-filesystem --target-no-signature --source "$IMAGE_REF" "$TARGET_MNT"
 else
-    echo "bootc utility not found on host, using podman/rsync fallback deployment..."
-    podman create --name conveyor-temp "$IMAGE_REF"
-    podman export conveyor-temp | tar -x -C "$TARGET_MNT"
-    podman rm conveyor-temp
+    echo "Deploying via bootc in-container installer (Podman)..."
+    podman run --rm --privileged --pid=host \
+        -v /var/lib/containers:/var/lib/containers \
+        -v /dev:/dev \
+        -v /mnt:/mnt \
+        --security-opt label=type:unconfined_t \
+        "$IMAGE_REF" \
+        bootc install to-filesystem --target-no-signature \
+        --karg="root=UUID=${BTRFS_UUID}" \
+        --karg="rootflags=subvol=@root" \
+        --karg="rd.luks.uuid=${LUKS_UUID}" \
+        "$TARGET_MNT" || {
+            echo "Fallback to container extraction..."
+            podman create --name conveyor-temp "$IMAGE_REF"
+            podman export conveyor-temp | tar -x -C "$TARGET_MNT"
+            podman rm conveyor-temp
+        }
 fi
 
 # 5. Generate /etc/fstab with real UUIDs
