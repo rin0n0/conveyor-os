@@ -5,7 +5,7 @@ set -euo pipefail
 # Deploys bootc OCI image to LUKS2+Btrfs, sets up UUIDs, fstab, and installs GRUB2 --removable
 
 DISK="${1:-}"
-IMAGE_REF="${2:-ghcr.io/your-username/conveyor-os:latest}"
+IMAGE_REF="${2:-ghcr.io/rin0n0/conveyor-os:latest}"
 
 if [[ -z "$DISK" || ! -b "$DISK" ]]; then
     echo "Usage: sudo $0 /dev/sdX [IMAGE_REF]" >&2
