@@ -2,8 +2,10 @@
 FROM registry.fedoraproject.org/fedora:43 AS llama-builder
 
 RUN dnf install -y --setopt=install_weak_deps=False --skip-unavailable \
-    git cmake ninja-build gcc-c++ vulkan-headers vulkan-loader-devel \
-    glslc spirv-tools libcurl-devel && \
+    git cmake ninja-build gcc-c++ \
+    vulkan-headers vulkan-loader-devel \
+    spirv-headers-devel spirv-tools-devel glslang-devel \
+    glslc libshaderc-devel spirv-tools libcurl-devel && \
     dnf clean all
 
 WORKDIR /build
