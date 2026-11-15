@@ -21,11 +21,12 @@ echo "=========================================="
 P1="${DISK}1"
 P2="${DISK}2"
 P3="${DISK}3"
+P4="${DISK}4"
 
 # 1. Open LUKS container if not open
 if [[ ! -e /dev/mapper/conveyor_crypt ]]; then
-    echo "[1/6] Opening LUKS2 partition $P3..."
-    cryptsetup open --allow-discards "$P3" conveyor_crypt
+    echo "[1/6] Opening LUKS2 partition $P4..."
+    cryptsetup open --allow-discards "$P4" conveyor_crypt
 fi
 
 LUKS_MAPPER="/dev/mapper/conveyor_crypt"
@@ -40,7 +41,8 @@ mkdir -p "$TARGET_MNT/boot" \
          "$TARGET_MNT/var/home" \
          "$TARGET_MNT/var/lib/models" \
          "$TARGET_MNT/var/lib/containers" \
-         "$TARGET_MNT/var/cache"
+         "$TARGET_MNT/var/cache" \
+         "$TARGET_MNT/mnt/shared"
 
 mount -o subvol=@home,noatime,compress=zstd:3 "$LUKS_MAPPER" "$TARGET_MNT/var/home"
 mount -o subvol=@models,noatime,compress=no "$LUKS_MAPPER" "$TARGET_MNT/var/lib/models"
@@ -54,15 +56,17 @@ mount "$P1" "$TARGET_MNT/boot/efi"
 
 # 3. Read hardware UUIDs
 echo "[3/6] Reading partition UUIDs..."
-LUKS_UUID=$(blkid -s UUID -o value "$P3")
+LUKS_UUID=$(blkid -s UUID -o value "$P4")
 BTRFS_UUID=$(blkid -s UUID -o value "$LUKS_MAPPER")
 BOOT_UUID=$(blkid -s UUID -o value "$P2")
 EFI_UUID=$(blkid -s UUID -o value "$P1")
+SHARED_UUID=$(blkid -s UUID -o value "$P3" || true)
 
-echo "  LUKS UUID:  $LUKS_UUID"
-echo "  BTRFS UUID: $BTRFS_UUID"
-echo "  BOOT UUID:  $BOOT_UUID"
-echo "  EFI UUID:   $EFI_UUID"
+echo "  LUKS UUID:   $LUKS_UUID"
+echo "  BTRFS UUID:  $BTRFS_UUID"
+echo "  BOOT UUID:   $BOOT_UUID"
+echo "  EFI UUID:    $EFI_UUID"
+echo "  SHARED UUID: $SHARED_UUID"
 
 # 4. Deploy bootc OS image
 echo "[4/6] Deploying bootc container image into filesystem..."
@@ -100,6 +104,10 @@ UUID=${BTRFS_UUID}  /var/lib/models      btrfs  subvol=@models,noatime,compress=
 UUID=${BTRFS_UUID}  /var/lib/containers  btrfs  subvol=@containers,noatime,compress=zstd:3 0 0
 UUID=${BTRFS_UUID}  /var/cache           btrfs  subvol=@var_cache,noatime,compress=zstd:3 0 0
 EOF
+
+if [[ -n "${SHARED_UUID}" ]]; then
+    echo "UUID=${SHARED_UUID} /mnt/shared          exfat  defaults,nofail,uid=1000,gid=1000,umask=022,iocharset=utf8 0 0" >> "$TARGET_MNT/etc/fstab"
+fi
 
 # Ensure /etc/crypttab for LUKS unlock
 cat > "$TARGET_MNT/etc/crypttab" <<EOF

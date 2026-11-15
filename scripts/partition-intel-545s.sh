@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Partition & format Intel SSD 545s 256GB (238.47 GiB) with LUKS2 + Btrfs subvolumes
+# Partition & format Intel SSD 545s 256GB (238.47 GiB)
+# Layout:
+# 1. 1 GiB EFI System (FAT32)
+# 2. 2 GiB /boot (ext4)
+# 3. 50 GiB Shared Buffer (exFAT - visible in Windows & Linux out-of-the-box)
+# 4. ~160 GiB LUKS2 Encrypted root (Btrfs subvolumes: @root, @home, @models, @containers, @var_cache)
+# Leaves ~25 GiB unallocated TLC over-provisioning reserve at end of disk!
 # WARNING: DESTROYS ALL DATA ON TARGET DISK!
 
 DISK="${1:-}"
@@ -12,14 +18,15 @@ fi
 
 echo "Target disk: $DISK"
 lsblk -o NAME,SIZE,MODEL,TRAN "$DISK"
-read -rp "Type YES to wipe $DISK and create Conveyor OS layout: " CONFIRM
+read -rp "Type YES to wipe $DISK and create Conveyor OS layout with 50GB Windows-Shared Buffer: " CONFIRM
 [[ "$CONFIRM" == "YES" ]] || exit 1
 
 wipefs -af "$DISK"
 sgdisk --zap-all "$DISK"
-sgdisk -n 1:0:+1GiB  -t 1:ef00 -c 1:"CONVEYOR-EFI"  "$DISK"
-sgdisk -n 2:0:+2GiB  -t 2:8300 -c 2:"CONVEYOR-BOOT" "$DISK"
-sgdisk -n 3:0:-25GiB -t 3:8309 -c 3:"CONVEYOR-LUKS" "$DISK" # Leaves ~25 GiB unallocated TLC over-provisioning reserve!
+sgdisk -n 1:0:+1GiB   -t 1:ef00 -c 1:"CONVEYOR-EFI"   "$DISK"
+sgdisk -n 2:0:+2GiB   -t 2:8300 -c 2:"CONVEYOR-BOOT"  "$DISK"
+sgdisk -n 3:0:+50GiB  -t 3:0700 -c 3:"SHARED"         "$DISK" # Microsoft basic data (exFAT) for Windows exchange
+sgdisk -n 4:0:-25GiB  -t 4:8309 -c 4:"CONVEYOR-LUKS"  "$DISK" # Leaves ~25 GiB unallocated TLC over-provisioning reserve!
 
 partprobe "$DISK"
 sleep 2
@@ -27,13 +34,21 @@ sleep 2
 P1="${DISK}1"
 P2="${DISK}2"
 P3="${DISK}3"
+P4="${DISK}4"
 
 mkfs.vfat -F 32 -n EFI "$P1"
 mkfs.ext4 -F -L BOOT "$P2"
 
+# Format universal exchange partition (exFAT with fallback to FAT32)
+if command -v mkfs.exfat >/dev/null 2>&1; then
+    mkfs.exfat -n SHARED "$P3"
+else
+    mkfs.vfat -F 32 -n SHARED "$P3"
+fi
+
 cryptsetup luksFormat --type luks2 --cipher aes-xts-plain64 --key-size 512 \
-    --hash sha256 --pbkdf argon2id --sector-size 4096 "$P3"
-cryptsetup open --allow-discards "$P3" conveyor_crypt
+    --hash sha256 --pbkdf argon2id --sector-size 4096 "$P4"
+cryptsetup open --allow-discards "$P4" conveyor_crypt
 
 mkfs.btrfs -f -L CONVEYOR /dev/mapper/conveyor_crypt
 
