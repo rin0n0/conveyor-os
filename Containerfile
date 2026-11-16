@@ -120,7 +120,9 @@ COPY system/usr/ /usr/
 
 RUN chmod +x /usr/local/libexec/boot-gpu-detect.sh \
              /usr/local/bin/session-wrapper.sh \
-             /usr/local/bin/*.sh || true
+             /usr/local/bin/*.sh || true && \
+    chmod 0440 /etc/sudoers.d/* 2>/dev/null || true && \
+    systemd-sysusers || true
 
 # Auto-enable required system services
 RUN systemctl enable greetd.service \

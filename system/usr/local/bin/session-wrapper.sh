@@ -14,7 +14,7 @@ fi
 export XDG_SESSION_TYPE=wayland
 export MOZ_ENABLE_WAYLAND=1
 export ELECTRON_OZONE_PLATFORM_HINT=auto
-export TERMINAL=footclient
+export TERMINAL=foot
 export LAUNCHER="fuzzel"
 
 # Ensure ephemeral Firefox & build caches stay off the SATA-USB drive
@@ -25,10 +25,6 @@ if [[ "${WAYLAND_RENDER_MODE:-hw}" == "sw" ]]; then
     export WLR_RENDERER=pixman
     export LIBGL_ALWAYS_SOFTWARE=1
 fi
-
-# Start shared lightweight cockpit daemons in background (0 MB VRAM terminal server)
-foot --server &
-wl-paste --type text --watch cliphist store &
 
 case "$COMPOSITOR" in
     driftwm)
