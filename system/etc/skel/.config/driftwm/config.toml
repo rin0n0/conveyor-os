@@ -14,6 +14,7 @@ autostart = [
 "mod+p"           = "exec /usr/local/bin/project-switcher.sh"
 "mod+n"           = "spawn nm-connection-editor"
 "mod+shift+n"     = "exec /usr/local/bin/net-switch.sh"
+"mod+grave"       = "exec /usr/local/bin/conveyor-live-stt.sh"
 "mod+v"           = "exec sh -c 'cliphist list | fuzzel --dmenu | cliphist decode | wl-copy'"
 "mod+q"           = "close-window"
 "mod+f"           = "toggle-fullscreen"

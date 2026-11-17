@@ -1,7 +1,6 @@
-# Target Profile: 8 GB VRAM + 32 GB System RAM
-# - Fast pool: Gemma 4 E4B fits 100% inside 8 GB VRAM (-ngl 99)
-# - Deep MoE: Qwen3.6-35B-A3B keeps DeltaNet/Attention/shared + q8_0 KV in 8 GB VRAM,
-#             and offloads routed experts to 32 GB RAM via --n-cpu-moe 36
+# Conveyor OS: Dynamic Scenario-Based LLM Router (llama-swap)
+# Optimized for 8 GB VRAM + dynamic CPU offload
+# Models are managed and tagged via 'conveyor-model' (linking to /var/lib/models/active-*.gguf)
 
 healthCheckTimeout: 300
 logLevel: info
@@ -12,75 +11,69 @@ groups:
   "vram_8gb_exclusive":
     swap: true
     members:
-      - "gemma4-e4b-fast"
-      - "qwen36-moe-think"
-      - "qwen36-moe-fast"
+      - "coder"
+      - "fast"
+      - "think"
 
 models:
-  "gemma4-e4b-fast":
+  # Scenario 1: Primary Coding Model (Aider, OpenCode, VS Code)
+  "coder":
     cmd: >
       llama-server
-      --model /var/lib/models/gemma-4-E4B-it-Q4_K_M.gguf
-      --mmproj /var/lib/models/mmproj-gemma-4-E4B-it.gguf
+      --model /var/lib/models/active-coder.gguf
       --port ${PORT}
       --host 127.0.0.1
       -ngl 99
       --ctx-size 32768
-      --flash-attn on
-      --spec-type draft-mtp
-      --jinja
-    aliases: ["fast-triage", "fast-vision", "fast-audio", "local-fast"]
-    ttl: 900
-    group: "vram_8gb_exclusive"
-
-  "qwen36-moe-think":
-    cmd: >
-      llama-server
-      --model /var/lib/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
-      --mmproj /var/lib/models/mmproj-qwen36-35b-a3b-f16.gguf
-      --port ${PORT}
-      --host 127.0.0.1
-      -ngl 99
-      --n-cpu-moe 36
-      --ctx-size 32768
-      --parallel 1
       --flash-attn on
       --cache-type-k q8_0
       --cache-type-v q8_0
-      --slot-save-path /var/lib/models/slots
       --jinja
-    aliases: ["coder-bg-think", "local-deep"]
+    aliases: ["coder", "claude-3-5-sonnet", "gpt-4o", "qwen-coder", "default"]
     ttl: 3600
     group: "vram_8gb_exclusive"
 
-  "qwen36-moe-fast":
+  # Scenario 2: Fast Triage & Chat Model
+  "fast":
     cmd: >
       llama-server
-      --model /var/lib/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+      --model /var/lib/models/active-fast.gguf
       --port ${PORT}
       --host 127.0.0.1
       -ngl 99
-      --n-cpu-moe 36
+      --ctx-size 16384
+      --flash-attn on
+      --jinja
+    aliases: ["fast", "gpt-4o-mini", "fast-triage", "chat", "local-fast"]
+    ttl: 900
+    group: "vram_8gb_exclusive"
+
+  # Scenario 3: Deep Reasoning & Complex Math / Logic (DeepSeek-R1 / QwQ)
+  "think":
+    cmd: >
+      llama-server
+      --model /var/lib/models/active-think.gguf
+      --port ${PORT}
+      --host 127.0.0.1
+      -ngl 99
       --ctx-size 32768
-      --parallel 1
       --flash-attn on
       --cache-type-k q8_0
       --cache-type-v q8_0
-      --reasoning-budget 0
-      --slot-save-path /var/lib/models/slots
       --jinja
-    aliases: ["coder-bg-fast"]
+    aliases: ["think", "o1", "deepseek-r1", "reasoning", "local-deep"]
     ttl: 1800
     group: "vram_8gb_exclusive"
 
-  "qwen3-embed":
+  # Scenario 4: Semantic Search & RAG Embeddings (CPU-based, 0 MB VRAM)
+  "embed":
     cmd: >
       llama-server
-      --model /var/lib/models/Qwen3-Embedding-0.6B-Q8_0.gguf
+      --model /var/lib/models/active-embed.gguf
       --port ${PORT}
       --host 127.0.0.1
       -ngl 0
       --embeddings
       --pooling last
-    aliases: ["rag-embed"]
+    aliases: ["embed", "rag-embed", "text-embedding-3-small"]
     persistent: true

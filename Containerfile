@@ -119,6 +119,7 @@ COPY system/etc/ /etc/
 COPY system/usr/ /usr/
 
 RUN chmod +x /usr/local/libexec/boot-gpu-detect.sh \
+             /usr/local/libexec/*.py \
              /usr/local/bin/session-wrapper.sh \
              /usr/local/bin/*.sh \
              /etc/NetworkManager/dispatcher.d/* 2>/dev/null || true && \
