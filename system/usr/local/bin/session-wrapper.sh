@@ -15,6 +15,8 @@ export XDG_SESSION_TYPE=wayland
 export MOZ_ENABLE_WAYLAND=1
 export ELECTRON_OZONE_PLATFORM_HINT=auto
 export TERMINAL=foot
+export EDITOR=micro
+export VISUAL=micro
 export LAUNCHER="fuzzel"
 
 # Ensure ephemeral Firefox & build caches stay off the SATA-USB drive

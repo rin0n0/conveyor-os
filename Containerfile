@@ -92,7 +92,7 @@ RUN dnf install -y --setopt=install_weak_deps=False --skip-unavailable \
     linux-firmware \
     greetd tuigreet \
     niri sway waybar fuzzel SwayNotificationCenter kanshi \
-    foot tmux neovim git lazygit git-delta difftastic \
+    foot tmux neovim micro nano git lazygit git-delta difftastic \
     ripgrep fd-find btop nvtop \
     firefox pipewire wireplumber wl-clipboard cliphist wtype \
     xdg-desktop-portal xdg-desktop-portal-gtk xdg-desktop-portal-gnome \
