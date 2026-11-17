@@ -12,6 +12,7 @@ autostart = [
 "mod+d"           = "spawn fuzzel"
 "mod+space"       = "spawn fuzzel"
 "mod+p"           = "exec /usr/local/bin/project-switcher.sh"
+"mod+n"           = "spawn nm-connection-editor"
 "mod+v"           = "exec sh -c 'cliphist list | fuzzel --dmenu | cliphist decode | wl-copy'"
 "mod+q"           = "close-window"
 "mod+f"           = "toggle-fullscreen"

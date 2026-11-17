@@ -97,7 +97,7 @@ RUN dnf install -y --setopt=install_weak_deps=False --skip-unavailable \
     firefox pipewire wireplumber wl-clipboard cliphist wtype \
     xdg-desktop-portal xdg-desktop-portal-gtk xdg-desktop-portal-gnome \
     bubblewrap podman zram-generator systemd-oomd nftables \
-    NetworkManager-wifi usb_modeswitch usbutils pciutils vulkan-tools \
+    NetworkManager-wifi NetworkManager-tui nm-connection-editor usb_modeswitch usbutils pciutils vulkan-tools \
     mesa-dri-drivers mesa-vulkan-drivers \
     python3 python3-pip uv nodejs npm pnpm clang lld sccache ccache && \
     dnf clean all
