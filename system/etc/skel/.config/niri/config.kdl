@@ -5,7 +5,7 @@ input {
     keyboard {
         xkb {
             layout "us,ru"
-            options "grp:win_space_toggle,caps:escape"
+            options "grp:alt_shift_toggle,caps:escape"
         }
     }
     touchpad {
@@ -45,9 +45,11 @@ layout {
 spawn-at-startup "waybar"
 spawn-at-startup "swaync"
 spawn-at-startup "kanshi"
+spawn-at-startup "wl-paste" "--type" "text" "--watch" "cliphist" "store"
 
 binds {
-    Mod+Return { spawn "footclient"; }
+    Mod+Return { spawn "foot"; }
+    Mod+Shift+S { spawn "/usr/local/bin/conveyor-screenshot.sh"; }
     Mod+D { spawn "fuzzel"; }
     Mod+Space { spawn "fuzzel"; }
     Mod+P { spawn "/usr/local/bin/project-switcher.sh"; }

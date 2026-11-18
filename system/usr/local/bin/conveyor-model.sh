@@ -20,7 +20,7 @@ cmd_list() {
     printf "%-18s %-32s %-12s\n" "СЦЕНАРИЙ (ALIAS)" "ТЕКУЩИЙ ФАЙЛ" "РАЗМЕР"
     echo "----------------------------------------------------------"
 
-    for role in "coder" "fast" "think" "embed" "vision"; do
+    for role in "coder" "fast" "think" "embed"; do
         link="$MODELS_DIR/active-${role}.gguf"
         if [[ -L "$link" ]]; then
             target=$(readlink -f "$link")
@@ -60,20 +60,31 @@ assign_model() {
     abs_src=$(realpath "$src_file")
 
     case "$role" in
-        coder|fast|think|embed|vision)
+        coder|fast|think|embed)
+            if [[ "$abs_src" != *.gguf ]]; then
+                echo "Ошибка: для роли [$role] нужен файл .gguf" >&2
+                exit 1
+            fi
+            if [[ ! -w "$MODELS_DIR" ]]; then
+                echo "Ошибка: нет прав на запись в $MODELS_DIR" >&2
+                exit 1
+            fi
             local target_link="$MODELS_DIR/active-${role}.gguf"
             if [[ "$mode" == "copy" ]]; then
                 echo "Копирование файла в $MODELS_DIR (Btrfs NoCoW)..."
                 local dest_file="$MODELS_DIR/$(basename "$abs_src")"
-                cp -v "$abs_src" "$dest_file"
-                chattr +C "$dest_file" 2>/dev/null || true
-                ln -sf "$dest_file" "$target_link"
+                if [[ "$abs_src" != "$dest_file" ]]; then
+                    cp -v "$abs_src" "$dest_file"
+                fi
+                ln -sfn "$dest_file" "$target_link"
             else
                 echo "Создание символической ссылки на $abs_src..."
-                ln -sf "$abs_src" "$target_link"
+                ln -sfn "$abs_src" "$target_link"
             fi
+            # Unload running models so the next request starts the new file
+            curl -fsS -m 10 -X POST http://127.0.0.1:8080/api/models/unload >/dev/null 2>&1 || true
             echo ">>> УСПЕХ: Роль [$role] теперь указывает на $(basename "$abs_src")"
-            echo ">>> Сервис llama-swap автоматически маршрутизирует сценарий '$role' на эту модель."
+            echo ">>> Сервис llama-swap будет использовать эту модель при следующем запросе к '$role'."
             ;;
         comfy-checkpoint)
             local target_dir="$SHARED_COMFY/checkpoints"
@@ -97,18 +108,20 @@ assign_model() {
             ;;
         *)
             echo "Неизвестный сценарий: $role" >&2
-            echo "Допустимые сценарии: coder, fast, think, embed, vision, comfy-checkpoint, comfy-lora" >&2
+            echo "Допустимые сценарии: coder, fast, think, embed, comfy-checkpoint, comfy-lora" >&2
             exit 1
             ;;
     esac
 }
 
 # If arguments provided: conveyor-model install <file> <role> [link|copy]
-if [[ $# -ge 2 ]]; then
-    if [[ "$1" == "install" || "$1" == "set" || "$1" == "register" ]]; then
-        assign_model "$2" "$3" "${4:-link}"
-        exit 0
+if [[ "${1:-}" == "install" || "${1:-}" == "set" || "${1:-}" == "register" ]]; then
+    if [[ $# -lt 3 ]]; then
+        echo "Использование: conveyor-model install <файл> <сценарий> [link|copy]" >&2
+        exit 1
     fi
+    assign_model "$2" "$3" "${4:-link}"
+    exit 0
 fi
 
 if [[ "${1:-}" == "list" || "${1:-}" == "status" ]]; then
@@ -164,20 +177,18 @@ echo " 1) [coder]            Основная модель кода (для Aide
 echo " 2) [fast]             Быстрая модель (короткие ответы, чат, триаж)"
 echo " 3) [think]            Глубокие рассуждения / логика (DeepSeek-R1 / QwQ)"
 echo " 4) [embed]            Векторные эмбеддинги для RAG и поиска"
-echo " 5) [vision]           Мультимодальная модель (с распознаванием изображений)"
-echo " 6) [comfy-checkpoint] Чекпоинт для генерации изображений (SD 1.5, SDXL, Flux)"
-echo " 7) [comfy-lora]       LoRA для ComfyUI"
+echo " 5) [comfy-checkpoint] Чекпоинт для генерации изображений (SD 1.5, SDXL, Flux)"
+echo " 6) [comfy-lora]       LoRA для ComfyUI"
 echo "----------------------------------------------------------"
-read -rp "Введите номер сценария [1-7]: " ROLE_IDX
+read -rp "Введите номер сценария [1-6]: " ROLE_IDX
 
 case "$ROLE_IDX" in
     1) ROLE="coder" ;;
     2) ROLE="fast" ;;
     3) ROLE="think" ;;
     4) ROLE="embed" ;;
-    5) ROLE="vision" ;;
-    6) ROLE="comfy-checkpoint" ;;
-    7) ROLE="comfy-lora" ;;
+    5) ROLE="comfy-checkpoint" ;;
+    6) ROLE="comfy-lora" ;;
     *) echo "Неверный выбор сценария."; exit 1 ;;
 esac
 

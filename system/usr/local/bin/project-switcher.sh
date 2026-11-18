@@ -3,36 +3,39 @@
 set -euo pipefail
 
 PROJECTS_DIR="${HOME}/Projects"
+CURRENT_PROJECT_FILE="${XDG_RUNTIME_DIR:-/tmp}/conveyor-current-project"
+CREATE_ITEM="➕ Новый проект"
+
 mkdir -p "$PROJECTS_DIR"
 
-# Collect list of active projects (directories containing .git or .jj)
-CANDIDATES=$(find "$PROJECTS_DIR" -maxdepth 2 \( -name ".git" -o -name ".jj" \) -printf "%h\n" 2>/dev/null | sort -u)
-
-if [[ -z "$CANDIDATES" ]]; then
-    # Offer to initialize a new project slot
-    NAME=$(echo -e "➕ Create New Project\n" | fuzzel --dmenu --prompt "Project: ")
-    if [[ "$NAME" == "➕ Create New Project"* ]]; then
-        NEW_NAME=$(echo "" | fuzzel --dmenu --prompt "New project name: ")
-        if [[ -n "$NEW_NAME" ]]; then
-            TARGET="${PROJECTS_DIR}/${NEW_NAME}"
-            mkdir -p "$TARGET"
-            (cd "$TARGET" && jj git init --colocate)
-            echo "$NEW_NAME" > /run/current-project
-            exec footclient -D "$TARGET" zellij -s "$NEW_NAME" --layout conveyor
-        fi
+open_project() {
+    local name="$1" target="${PROJECTS_DIR}/$1"
+    echo "$name" >"$CURRENT_PROJECT_FILE"
+    if zellij list-sessions --short 2>/dev/null | grep -Fxq -- "$name"; then
+        exec foot -D "$target" zellij attach "$name"
     fi
-    exit 0
+    exec foot -D "$target" zellij --session "$name" --layout conveyor
+}
+
+# Collect active projects (directories containing .git or .jj)
+PROJECTS=$(find "$PROJECTS_DIR" -mindepth 2 -maxdepth 2 \( -name ".git" -o -name ".jj" \) -printf "%h\n" 2>/dev/null \
+    | xargs -r -d '\n' -n1 basename | sort -u)
+
+# fuzzel exits non-zero when the menu is cancelled
+SELECTED=$({ echo "$CREATE_ITEM"; [[ -z "$PROJECTS" ]] || echo "$PROJECTS"; } \
+    | fuzzel --dmenu --prompt "Проект: ") || exit 0
+
+if [[ "$SELECTED" == "$CREATE_ITEM" ]]; then
+    NEW_NAME=$(fuzzel --dmenu --prompt "Название проекта: " </dev/null) || exit 0
+    if [[ -z "$NEW_NAME" || "$NEW_NAME" == *"/"* || "$NEW_NAME" == .* ]]; then
+        notify-send -a "Проекты" "Недопустимое название проекта" "$NEW_NAME" || true
+        exit 1
+    fi
+    mkdir -p "${PROJECTS_DIR}/${NEW_NAME}"
+    if [[ ! -e "${PROJECTS_DIR}/${NEW_NAME}/.git" && ! -e "${PROJECTS_DIR}/${NEW_NAME}/.jj" ]]; then
+        (cd "${PROJECTS_DIR}/${NEW_NAME}" && jj git init --colocate)
+    fi
+    SELECTED="$NEW_NAME"
 fi
 
-SELECTED=$(echo "$CANDIDATES" | while read -r p; do basename "$p"; done | fuzzel --dmenu --prompt "Switch Project: ")
-
-if [[ -n "$SELECTED" ]]; then
-    TARGET="${PROJECTS_DIR}/${SELECTED}"
-    echo "$SELECTED" > /run/current-project
-    # If Zellij session exists, attach; else start conveyor layout
-    if command -v footclient >/dev/null 2>&1; then
-        footclient -D "$TARGET" zellij attach -c "$SELECTED" --layout conveyor &
-    else
-        foot -D "$TARGET" zellij attach -c "$SELECTED" --layout conveyor &
-    fi
-fi
+[[ -n "$SELECTED" ]] && open_project "$SELECTED"

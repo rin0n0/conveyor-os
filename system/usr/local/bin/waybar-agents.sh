@@ -6,7 +6,9 @@ RUNNING_AGENTS=0
 WAITING_HUMAN=0
 
 # Check process table for active CLI agent instances
-RUNNING_AGENTS=$(pgrep -fc 'agy|opencode|claude|aider' 2>/dev/null || echo 0)
+# pgrep prints 0 and exits non-zero when nothing matches
+RUNNING_AGENTS=$(pgrep -fc 'agy|opencode|claude|aider' 2>/dev/null || true)
+RUNNING_AGENTS=${RUNNING_AGENTS:-0}
 
 # Check if any agent has flagged a pending human decision
 if [ -f /run/agent-waiting-human ]; then

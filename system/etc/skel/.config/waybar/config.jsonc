@@ -30,7 +30,7 @@
     },
     "custom/project": {
         "format": "📁 {}",
-        "exec": "cat /run/current-project 2>/dev/null || echo 'No Project'",
+        "exec": "cat \"$XDG_RUNTIME_DIR/conveyor-current-project\" 2>/dev/null || echo 'No Project'",
         "interval": 3,
         "tooltip": true
     },

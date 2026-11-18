@@ -27,6 +27,11 @@ echo "Target disk: $DISK"
 echo "Image ref:   $IMAGE_REF"
 echo "=========================================================="
 
+if ! command -v openssl >/dev/null 2>&1; then
+    echo "Error: openssl is required to set the user password." >&2
+    exit 1
+fi
+
 P1="${DISK}1"
 P2="${DISK}2"
 P3="${DISK}3"
@@ -160,6 +165,18 @@ echo "  BOOT UUID:   $BOOT_UUID"
 echo "  EFI UUID:    $EFI_UUID"
 echo "  SHARED UUID: $SHARED_UUID"
 
+# Keep the operator password across reinstalls, unless it is the old public default
+PASS_HASH=""
+if [[ -f "$TARGET_MNT/etc/shadow" ]]; then
+    OLD_HASH=$(awk -F: '$1 == "conveyor" {print $2}' "$TARGET_MNT/etc/shadow")
+    if [[ "$OLD_HASH" == \$6\$* ]]; then
+        OLD_SALT=$(cut -d'$' -f3 <<<"$OLD_HASH")
+        if [[ "$(openssl passwd -6 -salt "$OLD_SALT" conveyor)" != "$OLD_HASH" ]]; then
+            PASS_HASH="$OLD_HASH"
+        fi
+    fi
+fi
+
 # Step 5: Pull and Deploy Flat Rootfs
 echo "[5/7] Pulling and deploying OS image ($IMAGE_REF)..."
 podman pull "$IMAGE_REF"
@@ -190,35 +207,52 @@ if ! grep -q "^wheel:" "$TARGET_MNT/etc/group" 2>/dev/null; then
     echo "wheel:x:10:" >> "$TARGET_MNT/etc/group"
 fi
 
-# Create default operator user 'conveyor' if missing
+# Create operator user 'conveyor' if missing
+if ! grep -q "^conveyor:" "$TARGET_MNT/etc/group" 2>/dev/null; then
+    echo "conveyor:x:1000:" >> "$TARGET_MNT/etc/group"
+fi
 if ! grep -q "^conveyor:" "$TARGET_MNT/etc/passwd" 2>/dev/null; then
-    echo "Creating operator user 'conveyor' (password: conveyor)..."
-    if ! grep -q "^conveyor:" "$TARGET_MNT/etc/group" 2>/dev/null; then
-        echo "conveyor:x:1000:" >> "$TARGET_MNT/etc/group"
-    fi
+    echo "Creating operator user 'conveyor'..."
     echo "conveyor:x:1000:1000:Conveyor Operator:/var/home/conveyor:/bin/bash" >> "$TARGET_MNT/etc/passwd"
+fi
 
-    PASS_HASH=$(openssl passwd -6 conveyor 2>/dev/null || echo '$6$conveyor$7dJkH9M8lZqE2BqA3X1w0rY9.T8u7i6o5p4a3s2d1f0g9h8j7k6l5m4n3b2v1c0x9z8y7w6v5u4t3s2r1q0p9o8')
-    if grep -q "^conveyor:" "$TARGET_MNT/etc/shadow" 2>/dev/null; then
-        sed -i "s|^conveyor:.*|conveyor:${PASS_HASH}:19700:0:99999:7:::|" "$TARGET_MNT/etc/shadow"
-    else
-        echo "conveyor:${PASS_HASH}:19700:0:99999:7:::" >> "$TARGET_MNT/etc/shadow"
-    fi
+# There is no default password: ask for one unless a personal one was preserved
+if [[ -z "$PASS_HASH" ]]; then
+    while true; do
+        read -rsp "Set a password for user 'conveyor': " NEW_PASSWORD; echo
+        read -rsp "Repeat the password: " NEW_PASSWORD_REPEAT; echo
+        if [[ -n "$NEW_PASSWORD" && "$NEW_PASSWORD" == "$NEW_PASSWORD_REPEAT" ]]; then
+            break
+        fi
+        echo "Passwords are empty or do not match, try again."
+    done
+    PASS_HASH=$(printf '%s' "$NEW_PASSWORD" | openssl passwd -6 -stdin)
+    unset NEW_PASSWORD NEW_PASSWORD_REPEAT
+fi
 
-    # Set root password to conveyor for rescue operations
-    if grep -q "^root:" "$TARGET_MNT/etc/shadow" 2>/dev/null; then
-        sed -i "s|^root:.*|root:${PASS_HASH}:19700:0:99999:7:::|" "$TARGET_MNT/etc/shadow"
-    fi
+SHADOW_DAYS=$(( $(date +%s) / 86400 ))
+sed -i '/^conveyor:/d' "$TARGET_MNT/etc/shadow"
+echo "conveyor:${PASS_HASH}:${SHADOW_DAYS}:0:99999:7:::" >> "$TARGET_MNT/etc/shadow"
+
+# Root login stays locked: administration goes through sudo
+if grep -q "^root:" "$TARGET_MNT/etc/shadow"; then
+    sed -i "s|^root:[^:]*:|root:!:|" "$TARGET_MNT/etc/shadow"
 fi
 
 # Ensure conveyor is in wheel group
-sed -i '/^wheel:/ s/$/,conveyor/' "$TARGET_MNT/etc/group" 2>/dev/null || true
-sed -i 's/:,/:/g' "$TARGET_MNT/etc/group" 2>/dev/null || true
+if ! grep -Eq '^wheel:[^:]*:[^:]*:(.*,)?conveyor(,|$)' "$TARGET_MNT/etc/group"; then
+    sed -i '/^wheel:/ s/$/,conveyor/' "$TARGET_MNT/etc/group"
+    sed -i '/^wheel:/ s/:,/:/' "$TARGET_MNT/etc/group"
+fi
 
-# Grant passwordless sudo to wheel
+# sudo requires the operator password
 mkdir -p "$TARGET_MNT/etc/sudoers.d"
-echo "%wheel ALL=(ALL) NOPASSWD: ALL" > "$TARGET_MNT/etc/sudoers.d/wheel"
+echo "%wheel ALL=(ALL) ALL" > "$TARGET_MNT/etc/sudoers.d/wheel"
 chmod 0440 "$TARGET_MNT/etc/sudoers.d/wheel"
+
+# Local model storage is writable by administrators
+chown root:10 "$TARGET_MNT/var/lib/models"
+chmod 2775 "$TARGET_MNT/var/lib/models"
 
 # Initialize conveyor home directory from /etc/skel
 mkdir -p "$TARGET_MNT/var/home/conveyor"

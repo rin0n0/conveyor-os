@@ -1,13 +1,16 @@
 # Sway Configuration for Conveyor OS (Lightweight 2014 Legacy & llvmpipe Fallback)
 set $mod Mod4
-set $term footclient
+set $term foot
 set $menu fuzzel
 
-# Input configuration (English + Russian, Win+Space switch)
+# Input configuration (English + Russian, Alt+Shift switch)
 input * {
     xkb_layout "us,ru"
-    xkb_options "grp:win_space_toggle,caps:escape"
+    xkb_options "grp:alt_shift_toggle,caps:escape"
 }
+
+exec swaync
+exec wl-paste --type text --watch cliphist store
 
 # Output setup: solid dark background to avoid loading wallpaper textures into limited VRAM
 output * bg #101014 solid_color
@@ -19,6 +22,7 @@ bindsym $mod+space exec $menu
 bindsym $mod+p exec /usr/local/bin/project-switcher.sh
 bindsym $mod+v exec sh -c 'cliphist list | fuzzel --dmenu | cliphist decode | wl-copy'
 bindsym $mod+Shift+n exec swaync-client -t -sw
+bindsym $mod+Shift+s exec /usr/local/bin/conveyor-screenshot.sh
 
 bindsym $mod+q kill
 bindsym $mod+f fullscreen toggle
@@ -59,7 +63,7 @@ bindsym $mod+Shift+5 move container to workspace number 5
 
 # Layout split
 bindsym $mod+b splith
-bindsym $mod+v splitv
+bindsym $mod+Shift+v splitv
 bindsym $mod+s layout stacking
 bindsym $mod+w layout tabbed
 bindsym $mod+e layout toggle split

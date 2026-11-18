@@ -1,7 +1,11 @@
+# Pinned upstream versions. Bump them deliberately: a new version is a new build input.
 # Stage 1: Build universal llama.cpp + whisper.cpp (Dynamic backends: Vulkan + CPU ISA variants)
 FROM registry.fedoraproject.org/fedora:43 AS llama-builder
 
-RUN dnf install -y --setopt=install_weak_deps=False --skip-unavailable \
+ARG LLAMA_CPP_VERSION=v1.0.0
+ARG WHISPER_CPP_VERSION=v1.9.5
+
+RUN dnf install -y --setopt=install_weak_deps=False \
     git cmake ninja-build gcc-c++ \
     vulkan-headers vulkan-loader-devel \
     spirv-headers-devel spirv-tools-devel glslang-devel \
@@ -11,7 +15,7 @@ RUN dnf install -y --setopt=install_weak_deps=False --skip-unavailable \
 WORKDIR /build
 
 # Build llama.cpp with dynamic CPU dispatch (SSE4.2, AVX, AVX2, AVX-512) and Vulkan
-RUN git clone --depth 1 https://github.com/ggml-org/llama.cpp.git && \
+RUN git clone --depth 1 --branch "${LLAMA_CPP_VERSION}" https://github.com/ggml-org/llama.cpp.git && \
     cmake -S llama.cpp -B build-llama -G Ninja \
       -DCMAKE_BUILD_TYPE=Release \
       -DBUILD_SHARED_LIBS=ON \
@@ -31,7 +35,7 @@ RUN git clone --depth 1 https://github.com/ggml-org/llama.cpp.git && \
     ))
 
 # Build whisper.cpp for fast push-to-talk voice prompt transcription (0 MB VRAM)
-RUN git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git && \
+RUN git clone --depth 1 --branch "${WHISPER_CPP_VERSION}" https://github.com/ggml-org/whisper.cpp.git && \
     cmake -S whisper.cpp -B build-whisper -G Ninja \
       -DCMAKE_BUILD_TYPE=Release \
       -DWHISPER_BUILD_TESTS=OFF \
@@ -42,7 +46,9 @@ RUN git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git && \
 # Stage 2: Build Rust tools (DriftWM under safe x86-64-v2 ISA)
 FROM registry.fedoraproject.org/fedora:43 AS rust-builder
 
-RUN dnf install -y --setopt=install_weak_deps=False --skip-unavailable \
+ARG DRIFTWM_VERSION=v0.21.0
+
+RUN dnf install -y --setopt=install_weak_deps=False \
     git cargo rust clang pkgconf-pkg-config \
     wayland-devel libxkbcommon-devel libinput-devel mesa-libgbm-devel \
     libseat-devel libdisplay-info-devel systemd-devel && \
@@ -51,60 +57,88 @@ RUN dnf install -y --setopt=install_weak_deps=False --skip-unavailable \
 ENV RUSTFLAGS="-C target-cpu=x86-64-v2"
 WORKDIR /build
 
-RUN git clone --depth 1 https://github.com/malbiruk/driftwm.git && \
-    cargo build --release --manifest-path driftwm/Cargo.toml && \
+RUN git clone --depth 1 --branch "${DRIFTWM_VERSION}" https://github.com/malbiruk/driftwm.git && \
+    cargo build --release --locked --manifest-path driftwm/Cargo.toml && \
     install -Dm755 driftwm/target/release/driftwm /opt/rust-out/usr/local/bin/driftwm
 
-# Stage 3: Download non-packaged developer CLI binaries (llama-swap, jj, mise, ast-grep, pueue, zellij, yazi)
+# Stage 3: Download non-packaged developer CLI binaries
 FROM registry.fedoraproject.org/fedora:43 AS tools-downloader
 
-RUN dnf install -y --setopt=install_weak_deps=False curl tar gzip jq unzip && dnf clean all
+ARG LLAMA_SWAP_VERSION=273
+ARG JJ_VERSION=v0.47.1
+ARG MISE_VERSION=v2026.11.9
+ARG AST_GREP_VERSION=0.51.3
+ARG PUEUE_VERSION=v4.0.4
+ARG ZELLIJ_VERSION=v0.46.0
+ARG YAZI_VERSION=v26.9.1
+ARG CLIPHIST_VERSION=v0.7.0
+
+RUN dnf install -y --setopt=install_weak_deps=False curl tar gzip unzip && dnf clean all
 WORKDIR /opt/tools
 
-RUN set -eux; \
+RUN set -euxo pipefail; \
     mkdir -p /opt/tools/bin; \
-    # llama-swap (unified OpenAI + Anthropic API reverse proxy)
-    SWAP_URL=$(curl -fsSL https://api.github.com/repos/mostlygeek/llama-swap/releases/latest | jq -r '.assets[] | select(.name | test("linux.*(amd64|x86_64).*tar.gz$")) | .browser_download_url' | head -n1); \
-    if [ -n "$SWAP_URL" ]; then curl -fsSL "$SWAP_URL" | tar -xz -C /opt/tools/bin llama-swap; fi; \
-    # Jujutsu (jj VCS - fearless snapshots, no branch locking)
-    JJ_URL=$(curl -fsSL https://api.github.com/repos/jj-vcs/jj/releases/latest | jq -r '.assets[] | select(.name | test("x86_64-unknown-linux-musl.tar.gz$")) | .browser_download_url' | head -n1); \
-    if [ -n "$JJ_URL" ]; then curl -fsSL "$JJ_URL" | tar -xz -C /opt/tools/bin --strip-components=1 ./jj; fi; \
+    gh="https://github.com"; \
+    # llama-swap (OpenAI-compatible model router with a web UI on /ui)
+    curl -fsSL "$gh/mostlygeek/llama-swap/releases/download/v${LLAMA_SWAP_VERSION}/llama-swap_${LLAMA_SWAP_VERSION}_linux_amd64.tar.gz" | tar -xz -C /opt/tools/bin llama-swap; \
+    # Jujutsu (jj VCS)
+    curl -fsSL "$gh/jj-vcs/jj/releases/download/${JJ_VERSION}/jj-${JJ_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /opt/tools/bin --strip-components=1 ./jj; \
     # mise (polyglot runtime & env manager)
-    curl -fsSL https://mise.jdx.dev/mise-latest-linux-x64 -o /opt/tools/bin/mise; \
-    # ast-grep (AST-based code intelligence & structural search)
-    curl -fsSL https://github.com/ast-grep/ast-grep/releases/latest/download/app-x86_64-unknown-linux-gnu.zip -o /tmp/ast-grep.zip && \
-    unzip -q -o /tmp/ast-grep.zip -d /opt/tools/bin && rm -f /tmp/ast-grep.zip; \
-    # pueue & pueued (lightweight daemon for background batch tasks & MoE queues)
-    curl -fsSL https://github.com/Nukesor/pueue/releases/latest/download/pueue-x86_64-unknown-linux-musl -o /opt/tools/bin/pueue; \
-    curl -fsSL https://github.com/Nukesor/pueue/releases/latest/download/pueued-x86_64-unknown-linux-musl -o /opt/tools/bin/pueued; \
-    # zellij (terminal multiplexer with Attention Inbox)
-    curl -fsSL https://github.com/zellij-org/zellij/releases/latest/download/zellij-x86_64-unknown-linux-musl.tar.gz | tar -xz -C /opt/tools/bin; \
-    # yazi (terminal file manager with Sixel support)
-    curl -fsSL https://github.com/sxyazi/yazi/releases/latest/download/yazi-x86_64-unknown-linux-musl.zip -o /tmp/yazi.zip && \
-    unzip -q -j /tmp/yazi.zip "*/yazi" "*/ya" -d /opt/tools/bin && rm -f /tmp/yazi.zip; \
+    curl -fsSL "$gh/jdx/mise/releases/download/${MISE_VERSION}/mise-${MISE_VERSION}-linux-x64" -o /opt/tools/bin/mise; \
+    # ast-grep (structural code search)
+    curl -fsSL "$gh/ast-grep/ast-grep/releases/download/${AST_GREP_VERSION}/app-x86_64-unknown-linux-gnu.zip" -o /tmp/ast-grep.zip; \
+    unzip -q -o /tmp/ast-grep.zip -d /opt/tools/bin; \
+    # pueue & pueued (background task queue)
+    curl -fsSL "$gh/Nukesor/pueue/releases/download/${PUEUE_VERSION}/pueue-x86_64-unknown-linux-musl" -o /opt/tools/bin/pueue; \
+    curl -fsSL "$gh/Nukesor/pueue/releases/download/${PUEUE_VERSION}/pueued-x86_64-unknown-linux-musl" -o /opt/tools/bin/pueued; \
+    # zellij (terminal multiplexer)
+    curl -fsSL "$gh/zellij-org/zellij/releases/download/${ZELLIJ_VERSION}/zellij-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /opt/tools/bin; \
+    # yazi (terminal file manager)
+    curl -fsSL "$gh/sxyazi/yazi/releases/download/${YAZI_VERSION}/yazi-x86_64-unknown-linux-musl.zip" -o /tmp/yazi.zip; \
+    unzip -q -j /tmp/yazi.zip "*/yazi" "*/ya" -d /opt/tools/bin; \
+    # cliphist (clipboard history, not packaged in Fedora)
+    curl -fsSL "$gh/sentriz/cliphist/releases/download/${CLIPHIST_VERSION}/${CLIPHIST_VERSION}-linux-amd64" -o /opt/tools/bin/cliphist; \
+    rm -f /tmp/ast-grep.zip /tmp/yazi.zip; \
     chmod +x /opt/tools/bin/*
 
 # Stage 4: Bootable Immutable Fedora Atomic (bootc) OS Image
 FROM quay.io/fedora/fedora-bootc:43
 
-# Base firmware, Wayland sessions (DriftWM + Niri + Sway), Cockpit & Dev isolation
-RUN dnf install -y --setopt=install_weak_deps=False --skip-unavailable \
+ARG AIDER_VERSION=0.86.2
+ARG OPENCODE_VERSION=1.19.6
+# CI passes the current date, so the nightly build picks up Fedora package updates.
+ARG REFRESH_DATE=manual
+
+# A package that cannot be installed must fail the build.
+RUN echo "Fedora package refresh: ${REFRESH_DATE}" && \
+    dnf install -y --setopt=install_weak_deps=False \
     linux-firmware \
     greetd tuigreet \
     niri sway waybar fuzzel SwayNotificationCenter kanshi \
     foot tmux neovim micro nano git lazygit git-delta difftastic \
-    ripgrep fd-find btop nvtop \
-    firefox pipewire wireplumber wl-clipboard cliphist wtype \
+    ripgrep fd-find btop nvtop jq curl unzip \
+    firefox Thunar pavucontrol xdg-utils libnotify \
+    pipewire pipewire-pulseaudio pipewire-utils wireplumber \
+    wl-clipboard wtype grim slurp \
+    jetbrains-mono-fonts google-noto-sans-fonts google-noto-color-emoji-fonts fontawesome-6-free-fonts \
     xdg-desktop-portal xdg-desktop-portal-gtk xdg-desktop-portal-gnome \
-    bubblewrap podman zram-generator systemd-oomd nftables \
+    flatpak distrobox bubblewrap podman zram-generator systemd-oomd-defaults nftables \
     NetworkManager-wifi NetworkManager-tui nm-connection-editor iputils usb_modeswitch usbutils pciutils vulkan-tools \
+    gdisk exfatprogs \
     mesa-dri-drivers mesa-vulkan-drivers \
-    python3 python3-pip uv nodejs npm pnpm clang lld sccache ccache && \
+    python3 python3-pip python3.12 uv nodejs nodejs-npm pnpm \
+    gcc gcc-c++ make cmake gdb clang lld sccache ccache && \
     dnf clean all
 
-# Install CLI coding agents: aider-chat & opencode
-RUN uv pip install --system --break-system-packages aider-chat || true
-RUN npm install -g @opencode/cli || curl -fsSL https://opencode.ai/v2/install | bash || true
+# CLI coding agents. aider requires Python < 3.13, Fedora 43 defaults to a newer one.
+RUN UV_TOOL_DIR=/usr/lib/conveyor/uv-tools \
+    UV_TOOL_BIN_DIR=/usr/local/bin \
+    UV_CACHE_DIR=/tmp/uv-cache \
+    UV_PYTHON_DOWNLOADS=never \
+    uv tool install --python /usr/bin/python3.12 "aider-chat==${AIDER_VERSION}" && \
+    rm -rf /tmp/uv-cache
+RUN npm_config_cache=/tmp/npm-cache npm install -g --prefix /usr/local "opencode-ai@${OPENCODE_VERSION}" && \
+    rm -rf /tmp/npm-cache /tmp/node-compile-cache
 
 # Copy prebuilt universal binaries and tools
 COPY --from=llama-builder /opt/ai-out/ /usr/local/
@@ -117,21 +151,27 @@ RUN echo "/usr/local/lib64" > /etc/ld.so.conf.d/local-ai.conf && \
 # System configuration, udev rules (152d:0578 + host isolation), GPU detect & AI profiles
 COPY system/etc/ /etc/
 COPY system/usr/ /usr/
+COPY scripts/bwrap-agent-run.sh scripts/verify-gates.sh /usr/local/bin/
 
-RUN chmod +x /usr/local/libexec/boot-gpu-detect.sh \
-             /usr/local/libexec/*.py \
-             /usr/local/bin/session-wrapper.sh \
-             /usr/local/bin/*.sh \
-             /etc/NetworkManager/dispatcher.d/* 2>/dev/null || true && \
-    chmod 0440 /etc/sudoers.d/* 2>/dev/null || true && \
-    systemd-sysusers || true
+RUN chmod 0755 /usr/local/libexec/*.sh \
+               /usr/local/libexec/*.py \
+               /usr/local/bin/*.sh \
+               /etc/NetworkManager/dispatcher.d/* && \
+    chmod 0440 /etc/sudoers.d/* && \
+    ln -sf conveyor-model.sh /usr/local/bin/conveyor-model && \
+    systemd-sysusers
 
-# Auto-enable required system services
-RUN systemctl enable greetd.service \
+# Boot into the login screen and auto-enable required services
+RUN systemctl set-default graphical.target && \
+    systemctl enable greetd.service \
                      boot-gpu-detect.service \
                      llama-swap.service \
                      nftables.service \
                      fstrim.timer \
-                     NetworkManager.service
+                     NetworkManager.service && \
+    systemctl --global enable pueued.service
+
+# Fail the build if a promised program or config does not actually work
+RUN /usr/local/libexec/conveyor-check-image.sh
 
 RUN bootc container lint

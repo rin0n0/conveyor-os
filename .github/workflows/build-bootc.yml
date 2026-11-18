@@ -6,7 +6,19 @@ on:
     paths-ignore:
       - 'README.md'
       - 'docs/**'
+  schedule:
+    # Nightly rebuild picks up Fedora security and package updates.
+    - cron: '30 1 * * *'
   workflow_dispatch:
+    inputs:
+      skip_vm_test:
+        description: 'Publish :latest without the VM boot test'
+        type: boolean
+        default: false
+
+concurrency:
+  group: build-bootc
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -19,6 +31,8 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -39,16 +53,76 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=latest
             type=sha,format=short
 
-      - name: Build and push bootc image
+      - name: Pick package refresh date
+        id: refresh
+        run: echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
+      # :latest is published only by the promote job, after the image has booted.
+      - name: Build and push candidate image
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Containerfile
+          pull: true
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            REFRESH_DATE=${{ steps.refresh.outputs.date }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  vm-test:
+    needs: build
+    if: ${{ !inputs.skip_vm_test }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install QEMU and UEFI firmware
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 ovmf podman
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | sudo podman login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+
+      - name: Install the image to a disk and boot it
+        run: sudo bash scripts/ci-vm-test.sh "$REGISTRY/$IMAGE_NAME@${{ needs.build.outputs.digest }}"
+
+      - name: Upload boot log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vm-serial-log
+          path: vm-test/serial.log
+          if-no-files-found: ignore
+
+  promote:
+    needs: [build, vm-test]
+    if: ${{ !cancelled() && needs.build.result == 'success' && (needs.vm-test.result == 'success' || (inputs.skip_vm_test && needs.vm-test.result == 'skipped')) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish tested image as latest
+        run: |
+          docker buildx imagetools create \
+            --tag "$REGISTRY/$IMAGE_NAME:latest" \
+            "$REGISTRY/$IMAGE_NAME@${{ needs.build.outputs.digest }}"

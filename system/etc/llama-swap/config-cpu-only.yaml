@@ -1,32 +1,72 @@
-# Fallback Profile: Legacy 2014-2018 PC / 16 GB RAM / CPU-only (no heavy MoE OOM)
-# Uses llama.cpp dynamic CPU ISA dispatch (SSE4.2 / AVX / AVX2 / AVX-512)
+# Conveyor OS: CPU profile for PCs without a suitable discrete GPU.
+# Uses the same roles as the GPU profile, assigned with conveyor-model.
+# llama.cpp selects the best CPU instruction set at runtime.
 
 healthCheckTimeout: 300
 logLevel: info
 globalTTL: 600
 startPort: 10001
 
+routing:
+  router:
+    use: group
+    settings:
+      groups:
+        "cpu_models":
+          swap: true
+          exclusive: false
+          members:
+            - "coder"
+            - "fast"
+            - "think"
+        "always_on":
+          swap: false
+          exclusive: false
+          persistent: true
+          members:
+            - "embed"
+
 models:
-  "gemma4-e4b-cpu":
+  "coder":
     cmd: >
       llama-server
-      --model /var/lib/models/gemma-4-E4B-it-Q4_K_M.gguf
+      --model /var/lib/models/active-coder.gguf
       --port ${PORT}
       --host 127.0.0.1
       -ngl 0
-      --ctx-size 16384
+      --ctx-size 8192
       --jinja
-    aliases: ["fast-triage", "local-fast"]
-    ttl: 600
+    aliases: ["claude-3-5-sonnet", "gpt-4o", "qwen-coder", "default"]
 
-  "qwen3-embed":
+  "fast":
     cmd: >
       llama-server
-      --model /var/lib/models/Qwen3-Embedding-0.6B-Q8_0.gguf
+      --model /var/lib/models/active-fast.gguf
+      --port ${PORT}
+      --host 127.0.0.1
+      -ngl 0
+      --ctx-size 8192
+      --jinja
+    aliases: ["gpt-4o-mini", "fast-triage", "chat", "local-fast"]
+
+  "think":
+    cmd: >
+      llama-server
+      --model /var/lib/models/active-think.gguf
+      --port ${PORT}
+      --host 127.0.0.1
+      -ngl 0
+      --ctx-size 8192
+      --jinja
+    aliases: ["o1", "deepseek-r1", "reasoning", "local-deep"]
+
+  "embed":
+    cmd: >
+      llama-server
+      --model /var/lib/models/active-embed.gguf
       --port ${PORT}
       --host 127.0.0.1
       -ngl 0
       --embeddings
       --pooling last
-    aliases: ["rag-embed"]
-    ttl: 600
+    aliases: ["rag-embed", "text-embedding-3-small"]

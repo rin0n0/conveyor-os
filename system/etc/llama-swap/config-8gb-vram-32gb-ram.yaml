@@ -1,22 +1,33 @@
-# Conveyor OS: Dynamic Scenario-Based LLM Router (llama-swap)
-# Optimized for 8 GB VRAM + dynamic CPU offload
-# Models are managed and tagged via 'conveyor-model' (linking to /var/lib/models/active-*.gguf)
+# Conveyor OS: scenario-based LLM router (llama-swap), GPU profile for 7+ GB VRAM.
+# Roles point at /var/lib/models/active-<role>.gguf, assigned with conveyor-model.
+# The role names must match config-cpu-only.yaml so clients work on any PC.
 
 healthCheckTimeout: 300
 logLevel: info
 globalTTL: 1800
 startPort: 10001
 
-groups:
-  "vram_8gb_exclusive":
-    swap: true
-    members:
-      - "coder"
-      - "fast"
-      - "think"
+routing:
+  router:
+    use: group
+    settings:
+      groups:
+        "gpu_models":
+          swap: true
+          exclusive: false
+          members:
+            - "coder"
+            - "fast"
+            - "think"
+        "always_on":
+          swap: false
+          exclusive: false
+          persistent: true
+          members:
+            - "embed"
 
 models:
-  # Scenario 1: Primary Coding Model (Aider, OpenCode, VS Code)
+  # Primary coding model (Aider, OpenCode, editors)
   "coder":
     cmd: >
       llama-server
@@ -29,11 +40,10 @@ models:
       --cache-type-k q8_0
       --cache-type-v q8_0
       --jinja
-    aliases: ["coder", "claude-3-5-sonnet", "gpt-4o", "qwen-coder", "default"]
+    aliases: ["claude-3-5-sonnet", "gpt-4o", "qwen-coder", "default"]
     ttl: 3600
-    group: "vram_8gb_exclusive"
 
-  # Scenario 2: Fast Triage & Chat Model
+  # Fast triage and chat
   "fast":
     cmd: >
       llama-server
@@ -44,11 +54,10 @@ models:
       --ctx-size 16384
       --flash-attn on
       --jinja
-    aliases: ["fast", "gpt-4o-mini", "fast-triage", "chat", "local-fast"]
+    aliases: ["gpt-4o-mini", "fast-triage", "chat", "local-fast"]
     ttl: 900
-    group: "vram_8gb_exclusive"
 
-  # Scenario 3: Deep Reasoning & Complex Math / Logic (DeepSeek-R1 / QwQ)
+  # Deep reasoning, math and logic
   "think":
     cmd: >
       llama-server
@@ -61,11 +70,10 @@ models:
       --cache-type-k q8_0
       --cache-type-v q8_0
       --jinja
-    aliases: ["think", "o1", "deepseek-r1", "reasoning", "local-deep"]
+    aliases: ["o1", "deepseek-r1", "reasoning", "local-deep"]
     ttl: 1800
-    group: "vram_8gb_exclusive"
 
-  # Scenario 4: Semantic Search & RAG Embeddings (CPU-based, 0 MB VRAM)
+  # Semantic search and RAG embeddings (CPU, 0 MB VRAM)
   "embed":
     cmd: >
       llama-server
@@ -75,5 +83,4 @@ models:
       -ngl 0
       --embeddings
       --pooling last
-    aliases: ["embed", "rag-embed", "text-embedding-3-small"]
-    persistent: true
+    aliases: ["rag-embed", "text-embedding-3-small"]
