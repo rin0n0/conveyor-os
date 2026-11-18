@@ -75,6 +75,15 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Annotations stay readable on the run page without opening the full log.
+      - name: Report build errors
+        if: failure() && steps.build.outcome == 'failure'
+        run: |
+          docker buildx history logs 2>&1 \
+            | grep -E 'CHECK FAILED|image check|[Ee]rror:|npm (error|ERR)|No match for argument|Unable to find a match' \
+            | tail -n 9 \
+            | while IFS= read -r line; do echo "::error::${line}"; done
+
   vm-test:
     needs: build
     if: ${{ !inputs.skip_vm_test }}

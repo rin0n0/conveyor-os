@@ -72,6 +72,7 @@ ARG PUEUE_VERSION=v4.0.4
 ARG ZELLIJ_VERSION=v0.46.0
 ARG YAZI_VERSION=v26.9.1
 ARG CLIPHIST_VERSION=v0.7.0
+ARG OPENCODE_VERSION=v1.19.6
 
 RUN dnf install -y --setopt=install_weak_deps=False curl tar gzip unzip && dnf clean all
 WORKDIR /opt/tools
@@ -98,6 +99,8 @@ RUN set -euxo pipefail; \
     unzip -q -j /tmp/yazi.zip "*/yazi" "*/ya" -d /opt/tools/bin; \
     # cliphist (clipboard history, not packaged in Fedora)
     curl -fsSL "$gh/sentriz/cliphist/releases/download/${CLIPHIST_VERSION}/${CLIPHIST_VERSION}-linux-amd64" -o /opt/tools/bin/cliphist; \
+    # opencode (baseline build also runs on older CPUs without AVX2)
+    curl -fsSL "$gh/anomalyco/opencode/releases/download/${OPENCODE_VERSION}/opencode-linux-x64-baseline.tar.gz" | tar -xz -C /opt/tools/bin opencode; \
     rm -f /tmp/ast-grep.zip /tmp/yazi.zip; \
     chmod +x /opt/tools/bin/*
 
@@ -105,7 +108,6 @@ RUN set -euxo pipefail; \
 FROM quay.io/fedora/fedora-bootc:43
 
 ARG AIDER_VERSION=0.86.2
-ARG OPENCODE_VERSION=1.19.6
 # CI passes the current date, so the nightly build picks up Fedora package updates.
 ARG REFRESH_DATE=manual
 
@@ -130,15 +132,13 @@ RUN echo "Fedora package refresh: ${REFRESH_DATE}" && \
     gcc gcc-c++ make cmake gdb clang lld sccache ccache && \
     dnf clean all
 
-# CLI coding agents. aider requires Python < 3.13, Fedora 43 defaults to a newer one.
+# aider requires Python < 3.13, Fedora 43 defaults to a newer one.
 RUN UV_TOOL_DIR=/usr/lib/conveyor/uv-tools \
     UV_TOOL_BIN_DIR=/usr/local/bin \
     UV_CACHE_DIR=/tmp/uv-cache \
     UV_PYTHON_DOWNLOADS=never \
     uv tool install --python /usr/bin/python3.12 "aider-chat==${AIDER_VERSION}" && \
     rm -rf /tmp/uv-cache
-RUN npm_config_cache=/tmp/npm-cache npm install -g --prefix /usr/local "opencode-ai@${OPENCODE_VERSION}" && \
-    rm -rf /tmp/npm-cache /tmp/node-compile-cache
 
 # Copy prebuilt universal binaries and tools
 COPY --from=llama-builder /opt/ai-out/ /usr/local/
