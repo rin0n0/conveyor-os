@@ -57,6 +57,7 @@ cleanup() {
     if [[ "$CONTAINERS_BOUND" -eq 1 ]]; then
         umount /var/lib/containers 2>/dev/null || true
     fi
+    umount "$TARGET_MNT/proc" 2>/dev/null || true
     umount "$TARGET_MNT/boot/efi" 2>/dev/null || true
     umount "$TARGET_MNT/boot" 2>/dev/null || true
     umount "$TARGET_MNT/var/cache" 2>/dev/null || true
@@ -270,13 +271,6 @@ chown -R 1000:1000 "$TARGET_MNT/var/home/conveyor" 2>/dev/null || true
 mkdir -p "$TARGET_MNT/var/cache/tuigreet"
 chown -R 1000:1000 "$TARGET_MNT/var/cache/tuigreet" 2>/dev/null || true
 
-# Relabel SELinux contexts
-echo "Applying SELinux security contexts..."
-if command -v setfiles >/dev/null 2>&1 && [[ -f "$TARGET_MNT/etc/selinux/targeted/contexts/files/file_contexts" ]]; then
-    setfiles -r "$TARGET_MNT" "$TARGET_MNT/etc/selinux/targeted/contexts/files/file_contexts" "$TARGET_MNT" 2>/dev/null || true
-fi
-touch "$TARGET_MNT/.autorelabel"
-
 # Step 6: Configuration files (/etc/fstab and /etc/crypttab)
 echo "[6/7] Writing persistent fstab and crypttab..."
 cat > "$TARGET_MNT/etc/fstab" <<EOF
@@ -395,6 +389,22 @@ else
     echo "Warning: could not copy the Windows boot helper to the shared partition." >&2
 fi
 rmdir "$SHARED_MOUNT"
+
+# tar drops SELinux labels, and systemd cannot start on an unlabeled root in enforcing
+# mode. Label last, with the image's own tools, so this works from any live system.
+echo "Applying SELinux security contexts..."
+mount -t proc proc "$TARGET_MNT/proc"
+if chroot "$TARGET_MNT" setfiles -F -m \
+    -e /proc -e /sys -e /dev -e /run -e /tmp -e /var/tmp \
+    -e /var/lib/containers -e /boot/efi \
+    /etc/selinux/targeted/contexts/files/file_contexts /; then
+    rm -f "$TARGET_MNT/.autorelabel"
+else
+    echo "Warning: labeling failed, the first boot will use permissive mode and relabel." >&2
+    sed -i 's/^SELINUX=.*/SELINUX=permissive/' "$TARGET_MNT/etc/selinux/config"
+    touch "$TARGET_MNT/.autorelabel"
+fi
+umount "$TARGET_MNT/proc"
 
 sync
 
