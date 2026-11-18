@@ -26,7 +26,8 @@ sgdisk --zap-all "$DISK"
 sgdisk -n 1:0:+1GiB   -t 1:ef00 -c 1:"CONVEYOR-EFI"   "$DISK"
 sgdisk -n 2:0:+2GiB   -t 2:8300 -c 2:"CONVEYOR-BOOT"  "$DISK"
 sgdisk -n 3:0:+50GiB  -t 3:0700 -c 3:"SHARED"         "$DISK" # Microsoft basic data (exFAT) for Windows exchange
-sgdisk -n 4:0:-25GiB  -t 4:8309 -c 4:"CONVEYOR-LUKS"  "$DISK" # Leaves ~25 GiB unallocated TLC over-provisioning reserve!
+# --align-end keeps the size divisible by the 4K LUKS sector. Leaves ~25 GiB unallocated over-provisioning reserve.
+sgdisk --align-end -n 4:0:-25GiB -t 4:8309 -c 4:"CONVEYOR-LUKS" "$DISK"
 
 partprobe "$DISK"
 sleep 2
