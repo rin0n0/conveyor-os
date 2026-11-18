@@ -136,8 +136,18 @@ jobs:
       - name: Install test tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 ovmf podman cryptsetup btrfs-progs dosfstools \
-            exfatprogs gdisk parted "linux-modules-extra-$(uname -r)"
+          packages="qemu-system-x86 ovmf podman cryptsetup btrfs-progs dosfstools exfatprogs gdisk parted"
+          if ! sudo apt-get install -y $packages; then
+            for package in $packages; do
+              apt-cache show "$package" >/dev/null 2>&1 || echo "::error::Package not available: $package"
+            done
+            exit 1
+          fi
+          # Some runner kernels keep filesystem drivers in a separate package
+          sudo apt-get install -y "linux-modules-extra-$(uname -r)" || true
+          for module in btrfs exfat dm_crypt; do
+            sudo modprobe "$module" || { echo "::error::Kernel module not available: $module"; exit 1; }
+          done
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
@@ -146,7 +156,20 @@ jobs:
         run: echo "${{ secrets.GITHUB_TOKEN }}" | sudo podman login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
 
       - name: Install to a virtual USB disk and boot it
-        run: sudo bash scripts/ci-usb-boot-test.sh "$REGISTRY/$IMAGE_NAME@${{ needs.build.outputs.digest }}"
+        shell: bash
+        run: sudo bash scripts/ci-usb-boot-test.sh "$REGISTRY/$IMAGE_NAME@${{ needs.build.outputs.digest }}" 2>&1 | tee usb-test.log
+
+      - name: Report USB boot errors
+        if: failure()
+        shell: bash
+        run: |
+          {
+            grep -aE '^(plain|secureboot): |FATAL ERROR|^Error|[Ee]rror:|Failed to' usb-test.log | tail -n 5 || true
+            sudo tail -q -n 4 usb-test/serial-*.log 2>/dev/null || true
+          } | tr -d '\r\033' | cut -c1-300 | tail -n 9 | while IFS= read -r line; do
+            [[ -n "${line// /}" ]] && echo "::error::${line}"
+          done
+          true
 
       - name: Upload boot logs
         if: always()
