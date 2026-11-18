@@ -23,7 +23,7 @@ truncate -s 120G "$DISK"
 LOOP_DEVICE=$(losetup --find --show --partscan "$DISK")
 
 printf 'YES\n%s\n%s\n' "$LUKS_PASSPHRASE" "$LUKS_PASSPHRASE" \
-    | CONVEYOR_LUKS_BATCH=1 bash "$SCRIPT_DIR/partition-intel-545s.sh" "$LOOP_DEVICE"
+    | CONVEYOR_LUKS_BATCH=1 bash -x "$SCRIPT_DIR/partition-intel-545s.sh" "$LOOP_DEVICE"
 
 printf '%s\n%s\n' "$USER_PASSWORD" "$USER_PASSWORD" \
     | CONVEYOR_EXTRA_KARGS="console=ttyS0,115200 ignore_loglevel systemd.show_status=1 systemd.log_color=0" \

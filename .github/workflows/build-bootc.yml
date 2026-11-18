@@ -164,8 +164,8 @@ jobs:
         shell: bash
         run: |
           {
-            grep -aE '^(plain|secureboot): |FATAL ERROR|^Error|[Ee]rror:|Failed to' usb-test.log | tail -n 5 || true
-            sudo tail -q -n 4 usb-test/serial-*.log 2>/dev/null || true
+            tail -n 6 usb-test.log
+            sudo tail -q -n 3 usb-test/serial-*.log 2>/dev/null || true
           } | tr -d '\r\033' | cut -c1-300 | tail -n 9 | while IFS= read -r line; do
             [[ -n "${line// /}" ]] && echo "::error::${line}"
           done
