@@ -18,7 +18,7 @@ REQUIRED_COMMANDS=(
     flatpak distrobox podman bwrap
     python3 python3.12 uv node npm pnpm mise pueue pueued ast-grep
     gcc g++ make cmake gdb clang
-    llama-server llama-swap whisper-cli aider opencode
+    llama-server llama-swap whisper-cli aider opencode nvidia-smi
 )
 
 for cmd in "${REQUIRED_COMMANDS[@]}"; do
@@ -33,6 +33,21 @@ for check in "llama-server --version" "whisper-cli --help" "aider --version" "op
     # shellcheck disable=SC2086
     timeout 60 $check >/dev/null 2>&1 || fail "does not run: $check"
 done
+
+# llama.cpp looks for its CPU and GPU backends next to the executable
+compgen -G '/usr/local/bin/libggml-cpu-*.so' >/dev/null || fail "llama.cpp CPU backends missing"
+[[ -e /usr/local/bin/libggml-vulkan.so ]] || fail "llama.cpp Vulkan backend missing"
+
+kernel=$(find /usr/lib/modules -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | head -n1)
+for module in nvidia nvidia_drm nvidia_modeset nvidia_uvm nouveau; do
+    modinfo -k "$kernel" "$module" >/dev/null 2>&1 || fail "kernel module missing: $module"
+done
+if grep -rqE '^[[:space:]]*blacklist[[:space:]]+nouveau' /usr/lib/modprobe.d /etc/modprobe.d; then
+    fail "nouveau must be selected at boot, not blacklisted in the image"
+fi
+compgen -G '/usr/share/vulkan/icd.d/nvidia*.json' >/dev/null \
+    || compgen -G '/etc/vulkan/icd.d/nvidia*.json' >/dev/null \
+    || fail "NVIDIA Vulkan driver not found"
 
 check_llama_swap_profile() {
     local config="$1" port="$2" log models pid role

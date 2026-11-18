@@ -27,12 +27,11 @@ RUN git clone --depth 1 --branch "${LLAMA_CPP_VERSION}" https://github.com/ggml-
       -DGGML_BUILD_TESTS=OFF \
       -DLLAMA_BUILD_EXAMPLES=OFF \
       -DLLAMA_BUILD_SERVER=ON && \
-    cmake --build build-llama --target llama-server llama-cli -j"$(nproc)" && \
-    (cmake --install build-llama --prefix /opt/ai-out || ( \
-      mkdir -p /opt/ai-out/bin /opt/ai-out/lib64 && \
-      install -Dm755 build-llama/bin/llama* /opt/ai-out/bin/ && \
-      find build-llama -name "*.so*" -exec cp -d {} /opt/ai-out/lib64/ \; \
-    ))
+    cmake --build build-llama --target llama-server -j"$(nproc)" && \
+    mkdir -p /opt/ai-out/bin /opt/ai-out/lib64 && \
+    install -m755 build-llama/bin/llama-server /opt/ai-out/bin/ && \
+    find build-llama -name "*.so*" -exec cp -P {} /opt/ai-out/lib64/ \; && \
+    find build-llama \( -name "libggml-cpu-*.so" -o -name "libggml-vulkan.so" \) -exec cp -P {} /opt/ai-out/bin/ \;
 
 # Build whisper.cpp for fast push-to-talk voice prompt transcription (0 MB VRAM)
 RUN git clone --depth 1 --branch "${WHISPER_CPP_VERSION}" https://github.com/ggml-org/whisper.cpp.git && \
@@ -104,7 +103,32 @@ RUN set -euxo pipefail; \
     rm -f /tmp/ast-grep.zip /tmp/yazi.zip; \
     chmod +x /opt/tools/bin/*
 
-# Stage 4: Bootable Immutable Fedora Atomic (bootc) OS Image
+# Stage 4: Build NVIDIA open kernel modules for the exact kernel of the base image
+FROM quay.io/fedora/fedora-bootc:43 AS nvidia-builder
+
+# The repository only keeps current drivers, so this follows the nightly refresh.
+ARG REFRESH_DATE=manual
+
+RUN set -euxo pipefail; \
+    echo "NVIDIA driver refresh: ${REFRESH_DATE}"; \
+    curl -fsSL https://negativo17.org/repos/fedora-nvidia.repo -o /etc/yum.repos.d/fedora-nvidia.repo; \
+    mkdir -p /var/roothome /var/lib/alternatives /var/cache/akmods /var/log/akmods /run/akmods /out; \
+    chmod 1777 /var/tmp; \
+    kernel_version=$(rpm -q --qf '%{VERSION}' kernel-core); \
+    kernel_release=$(rpm -q --qf '%{RELEASE}' kernel-core); \
+    kernel="${kernel_version}-${kernel_release}.x86_64"; \
+    # Fedora mirrors drop older kernels, Koji keeps every build
+    dnf install -y --setopt=install_weak_deps=False "kernel-devel-${kernel}" || \
+      dnf install -y --setopt=install_weak_deps=False \
+        "https://kojipkgs.fedoraproject.org/packages/kernel/${kernel_version}/${kernel_release}/x86_64/kernel-devel-${kernel}.rpm"; \
+    dnf install -y --setopt=install_weak_deps=False akmod-nvidia; \
+    akmods --force --kernels "${kernel}" --kmod nvidia; \
+    modinfo -k "${kernel}" nvidia nvidia_drm nvidia_modeset nvidia_uvm >/dev/null; \
+    cp /var/cache/akmods/nvidia/kmod-nvidia-*.rpm /out/; \
+    echo "${kernel}" >/out/kernel; \
+    rpm -q --qf '%{VERSION}' akmod-nvidia >/out/version
+
+# Stage 5: Bootable Immutable Fedora Atomic (bootc) OS Image
 FROM quay.io/fedora/fedora-bootc:43
 
 ARG AIDER_VERSION=0.86.2
@@ -130,6 +154,24 @@ RUN echo "Fedora package refresh: ${REFRESH_DATE}" && \
     mesa-dri-drivers mesa-vulkan-drivers \
     python3 python3-pip python3.12 uv nodejs nodejs-npm pnpm \
     gcc gcc-c++ make cmake gdb clang lld sccache ccache && \
+    dnf clean all
+
+# NVIDIA driver. nouveau stays available: the boot menu picks the driver through
+# kernel arguments, so older NVIDIA cards on other PCs still have an option.
+RUN --mount=type=bind,from=nvidia-builder,source=/out,target=/tmp/nvidia \
+    set -euxo pipefail; \
+    kernel=$(cat /tmp/nvidia/kernel); \
+    driver=$(cat /tmp/nvidia/version); \
+    test -d "/usr/lib/modules/${kernel}"; \
+    mkdir -p /var/roothome /var/lib/alternatives; \
+    curl -fsSL https://negativo17.org/repos/fedora-nvidia.repo -o /etc/yum.repos.d/fedora-nvidia.repo; \
+    dnf install -y --setopt=install_weak_deps=False \
+      /tmp/nvidia/kmod-nvidia-*.rpm "nvidia-driver-${driver}" "nvidia-driver-cuda-${driver}"; \
+    mkdir -p /usr/lib/modprobe.d /etc/modprobe.d; \
+    find /usr/lib/modprobe.d /etc/modprobe.d -type f \
+      -exec sed -i -E '/^[[:space:]]*(blacklist|install)[[:space:]]+nouveau/d' {} +; \
+    depmod -a "${kernel}"; \
+    rm -f /etc/yum.repos.d/fedora-nvidia.repo; \
     dnf clean all
 
 # aider requires Python < 3.13, Fedora 43 defaults to a newer one.

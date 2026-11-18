@@ -6,7 +6,8 @@ TEXT="GPU: N/A"
 ALT="none"
 CLASS=""
 
-if command -v nvidia-smi >/dev/null 2>&1; then
+# nvidia-smi ships in the image for every PC, so check that the driver is loaded
+if [ -d /sys/module/nvidia ] && command -v nvidia-smi >/dev/null 2>&1; then
     USED=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -n1 2>/dev/null || echo 0)
     TOTAL=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -n1 2>/dev/null || echo 0)
     if (( TOTAL > 0 )); then

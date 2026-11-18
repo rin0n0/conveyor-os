@@ -40,6 +40,10 @@ case "$COMPOSITOR" in
         exec niri-session
         ;;
     sway)
+        # sway refuses to start on the NVIDIA driver without this flag
+        if [[ -d /sys/module/nvidia ]]; then
+            exec sway --unsupported-gpu
+        fi
         exec sway
         ;;
     *)

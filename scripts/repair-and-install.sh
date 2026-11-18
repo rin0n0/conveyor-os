@@ -392,12 +392,17 @@ insmod luks
 search --no-floppy --fs-uuid --set=root ${BOOT_UUID}
 
 menuentry \"Conveyor OS (Universal Auto-Detect 2014-2026)\" {
-    linux /vmlinuz root=UUID=${BTRFS_UUID} rootflags=subvol=@root rd.luks.name=${LUKS_UUID}=conveyor_crypt rd.auto=1 rootwait usbcore.autosuspend=-1 iommu=pt quiet
+    linux /vmlinuz root=UUID=${BTRFS_UUID} rootflags=subvol=@root rd.luks.name=${LUKS_UUID}=conveyor_crypt rd.auto=1 rootwait usbcore.autosuspend=-1 iommu=pt rd.driver.blacklist=nouveau modprobe.blacklist=nouveau nvidia-drm.modeset=1 nvidia-drm.fbdev=1 quiet
+    initrd /initramfs.img
+}
+
+menuentry \"Conveyor OS (Open NVIDIA driver: older cards or Secure Boot)\" {
+    linux /vmlinuz root=UUID=${BTRFS_UUID} rootflags=subvol=@root rd.luks.name=${LUKS_UUID}=conveyor_crypt rd.auto=1 rootwait usbcore.autosuspend=-1 iommu=pt modprobe.blacklist=nvidia,nvidia_drm,nvidia_modeset,nvidia_uvm quiet
     initrd /initramfs.img
 }
 
 menuentry \"Conveyor OS (Safe Hardware: JMS578 BOT + Safe Graphics)\" {
-    linux /vmlinuz root=UUID=${BTRFS_UUID} rootflags=subvol=@root rd.luks.name=${LUKS_UUID}=conveyor_crypt rd.auto=1 rootwait usbcore.autosuspend=-1 usb-storage.quirks=152d:0578:u nomodeset
+    linux /vmlinuz root=UUID=${BTRFS_UUID} rootflags=subvol=@root rd.luks.name=${LUKS_UUID}=conveyor_crypt rd.auto=1 rootwait usbcore.autosuspend=-1 usb-storage.quirks=152d:0578:u modprobe.blacklist=nvidia,nvidia_drm,nvidia_modeset,nvidia_uvm nomodeset
     initrd /initramfs.img
 }
 "

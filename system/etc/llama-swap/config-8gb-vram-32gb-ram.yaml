@@ -1,6 +1,8 @@
 # Conveyor OS: scenario-based LLM router (llama-swap), GPU profile for 7+ GB VRAM.
 # Roles point at /var/lib/models/active-<role>.gguf, assigned with conveyor-model.
 # The role names must match config-cpu-only.yaml so clients work on any PC.
+# GPU layers and context are left unset: llama-server fits them to free VRAM, keeps
+# 512 MiB for the desktop and moves the remaining layers to system RAM if needed.
 
 healthCheckTimeout: 300
 logLevel: info
@@ -34,8 +36,10 @@ models:
       --model /var/lib/models/active-coder.gguf
       --port ${PORT}
       --host 127.0.0.1
-      -ngl 99
-      --ctx-size 32768
+      --parallel 1
+      --fit on
+      --fit-target 512
+      --fit-ctx 16384
       --flash-attn on
       --cache-type-k q8_0
       --cache-type-v q8_0
@@ -50,8 +54,10 @@ models:
       --model /var/lib/models/active-fast.gguf
       --port ${PORT}
       --host 127.0.0.1
-      -ngl 99
-      --ctx-size 16384
+      --parallel 1
+      --fit on
+      --fit-target 512
+      --fit-ctx 8192
       --flash-attn on
       --jinja
     aliases: ["gpt-4o-mini", "fast-triage", "chat", "local-fast"]
@@ -64,8 +70,10 @@ models:
       --model /var/lib/models/active-think.gguf
       --port ${PORT}
       --host 127.0.0.1
-      -ngl 99
-      --ctx-size 32768
+      --parallel 1
+      --fit on
+      --fit-target 512
+      --fit-ctx 16384
       --flash-attn on
       --cache-type-k q8_0
       --cache-type-v q8_0

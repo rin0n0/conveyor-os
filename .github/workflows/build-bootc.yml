@@ -75,13 +75,19 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Annotations stay readable on the run page without opening the full log.
+      # Repeats the failed build with plain output and turns its errors into
+      # annotations, which stay readable on the run page without the full log.
       - name: Report build errors
         if: failure() && steps.build.outcome == 'failure'
+        continue-on-error: true
+        timeout-minutes: 45
         run: |
-          docker buildx history logs 2>&1 \
-            | grep -E 'CHECK FAILED|image check|[Ee]rror:|npm (error|ERR)|No match for argument|Unable to find a match' \
+          docker buildx build --progress=plain --cache-from type=gha \
+            --build-arg "REFRESH_DATE=${{ steps.refresh.outputs.date }}" \
+            --file Containerfile . >build.log 2>&1 || true
+          grep -E 'CHECK FAILED|image check|[Ee]rror:|FAILED:|npm error|No match for argument|Unable to find a match|cannot (stat|create|find)|install: ' build.log \
             | tail -n 9 \
+            | cut -c1-400 \
             | while IFS= read -r line; do echo "::error::${line}"; done
 
   vm-test:
