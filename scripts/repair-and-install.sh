@@ -32,10 +32,13 @@ if ! command -v openssl >/dev/null 2>&1; then
     exit 1
 fi
 
-P1="${DISK}1"
-P2="${DISK}2"
-P3="${DISK}3"
-P4="${DISK}4"
+# NVMe, MMC and loop devices name partitions with a "p": /dev/nvme0n1p1
+PART_PREFIX="$DISK"
+[[ "$DISK" =~ [0-9]$ ]] && PART_PREFIX="${DISK}p"
+P1="${PART_PREFIX}1"
+P2="${PART_PREFIX}2"
+P3="${PART_PREFIX}3"
+P4="${PART_PREFIX}4"
 
 for p in "$P1" "$P2" "$P3" "$P4"; do
     if [[ ! -b "$p" ]]; then
@@ -185,6 +188,8 @@ echo "Deploying flat rootfs to subvolume @root..."
 podman rm -f conveyor-temp 2>/dev/null || true
 podman create --name conveyor-temp "$IMAGE_REF"
 echo "Extracting rootfs archive onto target SSD..."
+# Old kernel directories must not survive: the boot step needs exactly the image kernel
+rm -rf "$TARGET_MNT/usr/lib/modules"
 podman export conveyor-temp | tar -x -C "$TARGET_MNT"
 podman rm conveyor-temp
 
@@ -294,149 +299,117 @@ cat > "$TARGET_MNT/etc/crypttab" <<EOF
 conveyor_crypt UUID=${LUKS_UUID} none discard,fido2-device=auto,timeout=30s
 EOF
 
-# Step 7: Guarantee UEFI Bootloader in \EFI\BOOT\BOOTX64.EFI
-echo "[7/7] Installing UEFI bootloader and kernel binaries..."
-mkdir -p "$TARGET_MNT/boot/efi/EFI/BOOT"
-mkdir -p "$TARGET_MNT/boot/efi/EFI/fedora"
+# Step 7: Install the signed boot chain from the image onto the removable UEFI path
+echo "[7/7] Installing UEFI bootloader and kernel from the image..."
 
-# Locate kernel and initramfs
-KERNEL_SRC=$(find "$TARGET_MNT/boot" "$TARGET_MNT/usr/lib/modules" -type f -name "vmlinuz*" 2>/dev/null | head -n1 || true)
-INITRD_SRC=$(find "$TARGET_MNT/boot" "$TARGET_MNT/usr/lib/modules" -type f \( -name "initramfs*" -o -name "initrd*" \) 2>/dev/null | head -n1 || true)
+fatal() {
+    echo ">>> FATAL ERROR: $*" >&2
+    exit 1
+}
 
-if [[ -n "$KERNEL_SRC" && -f "$KERNEL_SRC" ]]; then
-    if [[ "$KERNEL_SRC" != "$TARGET_MNT/boot/vmlinuz" ]]; then
-        echo "Copying kernel from $KERNEL_SRC -> /boot/vmlinuz..."
-        cp -fv "$KERNEL_SRC" "$TARGET_MNT/boot/vmlinuz"
-    fi
-else
-    echo "Warning: kernel not found in target image, checking host..."
-    cp -fv /boot/vmlinuz* "$TARGET_MNT/boot/vmlinuz" 2>/dev/null || true
-fi
+EFI_SOURCE="$TARGET_MNT/usr/lib/bootupd/updates/EFI/fedora"
+ESP_EFI="$TARGET_MNT/boot/efi/EFI"
+BOOT_DIR="$TARGET_MNT/boot"
 
-if [[ -n "$INITRD_SRC" && -f "$INITRD_SRC" ]]; then
-    if [[ "$INITRD_SRC" != "$TARGET_MNT/boot/initramfs.img" ]]; then
-        echo "Copying initramfs from $INITRD_SRC -> /boot/initramfs.img..."
-        cp -fv "$INITRD_SRC" "$TARGET_MNT/boot/initramfs.img"
-    fi
-fi
+mapfile -t IMAGE_KERNELS < <(find "$TARGET_MNT/usr/lib/modules" -mindepth 1 -maxdepth 1 -type d -printf '%f\n')
+(( ${#IMAGE_KERNELS[@]} == 1 )) || fatal "expected one kernel in the image, found: ${IMAGE_KERNELS[*]:-none}"
+KERNEL_DIR="$TARGET_MNT/usr/lib/modules/${IMAGE_KERNELS[0]}"
 
-if [[ ! -f "$TARGET_MNT/boot/initramfs.img" ]]; then
-    echo "Generating fresh initramfs via dracut..."
-    if command -v dracut >/dev/null 2>&1; then
-        dracut --sysroot "$TARGET_MNT" --force --add "crypt btrfs" "$TARGET_MNT/boot/initramfs.img" 2>/dev/null || \
-        dracut --force --add "crypt btrfs" "$TARGET_MNT/boot/initramfs.img" 2>/dev/null || true
-    fi
-fi
-
-# Locate signed shim and grub binaries
-SHIM_FILE=""
-for s in "$TARGET_MNT/boot/efi/EFI/fedora/shimx64.efi" \
-         "$TARGET_MNT/boot/efi/EFI/BOOT/BOOTX64.EFI" \
-         "$TARGET_MNT/usr/share/efi/x64/shimx64.efi" \
-         "$TARGET_MNT/usr/lib/ostree-boot/efi/EFI/fedora/shimx64.efi" \
-         /boot/efi/EFI/BOOT/BOOTX64.EFI \
-         /boot/efi/EFI/BOOT/bootx64.efi \
-         /boot/efi/EFI/fedora/shimx64.efi; do
-    if [[ -f "$s" ]]; then SHIM_FILE="$s"; break; fi
+for required in "$KERNEL_DIR/vmlinuz" "$KERNEL_DIR/initramfs.img" \
+                "$EFI_SOURCE/shimx64.efi" "$EFI_SOURCE/grubx64.efi" "$EFI_SOURCE/mmx64.efi"; do
+    [[ -s "$required" ]] || fatal "missing in image: ${required#"$TARGET_MNT"}"
 done
 
-GRUB_FILE=""
-for g in "$TARGET_MNT/boot/efi/EFI/fedora/grubx64.efi" \
-         "$TARGET_MNT/boot/efi/EFI/BOOT/grubx64.efi" \
-         "$TARGET_MNT/usr/share/efi/x64/grubx64.efi" \
-         "$TARGET_MNT/usr/lib/ostree-boot/efi/EFI/fedora/grubx64.efi" \
-         /boot/efi/EFI/BOOT/grubx64.efi \
-         /boot/efi/EFI/fedora/grubx64.efi; do
-    if [[ -f "$g" ]]; then GRUB_FILE="$g"; break; fi
-done
+# Replace the kernel only after the new copy is complete
+cp -f "$KERNEL_DIR/vmlinuz" "$BOOT_DIR/vmlinuz.new"
+cp -f "$KERNEL_DIR/initramfs.img" "$BOOT_DIR/initramfs.img.new"
+sync
+mv -f "$BOOT_DIR/vmlinuz.new" "$BOOT_DIR/vmlinuz"
+mv -f "$BOOT_DIR/initramfs.img.new" "$BOOT_DIR/initramfs.img"
 
-if [[ -n "$SHIM_FILE" ]]; then
-    echo "Installing signed shim: $SHIM_FILE -> \\EFI\\BOOT\\BOOTX64.EFI"
-    cp -fv "$SHIM_FILE" "$TARGET_MNT/boot/efi/EFI/BOOT/BOOTX64.EFI"
-    cp -fv "$SHIM_FILE" "$TARGET_MNT/boot/efi/EFI/fedora/shimx64.efi" 2>/dev/null || true
-fi
+BASE_KARGS="root=UUID=${BTRFS_UUID} rootflags=subvol=@root rd.luks.name=${LUKS_UUID}=conveyor_crypt rd.auto=1 rootwait usbcore.autosuspend=-1 ${CONVEYOR_EXTRA_KARGS:-}"
+NVIDIA_KARGS="rd.driver.blacklist=nouveau modprobe.blacklist=nouveau nvidia-drm.modeset=1 nvidia-drm.fbdev=1"
+OPEN_GPU_KARGS="modprobe.blacklist=nvidia,nvidia_drm,nvidia_modeset,nvidia_uvm"
 
-if [[ -n "$GRUB_FILE" ]]; then
-    echo "Installing grub binary: $GRUB_FILE -> \\EFI\\BOOT\\grubx64.efi"
-    cp -fv "$GRUB_FILE" "$TARGET_MNT/boot/efi/EFI/BOOT/grubx64.efi"
-    cp -fv "$GRUB_FILE" "$TARGET_MNT/boot/efi/EFI/fedora/grubx64.efi" 2>/dev/null || true
-fi
-
-# Fallback: if grub2-install is available on host, invoke it for removable targets
-if command -v grub2-install >/dev/null 2>&1; then
-    echo "Running grub2-install --removable..."
-    grub2-install --target=x86_64-efi \
-        --efi-directory="$TARGET_MNT/boot/efi" \
-        --boot-directory="$TARGET_MNT/boot" \
-        --bootloader-id=BOOT \
-        --removable || true
-elif command -v grub-install >/dev/null 2>&1; then
-    echo "Running grub-install --removable..."
-    grub-install --target=x86_64-efi \
-        --efi-directory="$TARGET_MNT/boot/efi" \
-        --boot-directory="$TARGET_MNT/boot" \
-        --bootloader-id=BOOT \
-        --removable || true
-fi
-
-# Write standalone grub.cfg directly into \EFI\BOOT\grub.cfg
-# Note: uses rd.luks.name=${LUKS_UUID}=conveyor_crypt to avoid naming race with crypttab!
-GRUB_CONFIG="set default=0
+GRUB_CONFIG_FILE=$(mktemp)
+cat >"$GRUB_CONFIG_FILE" <<EOF
+set default=0
 set timeout=5
-
-insmod part_gpt
-insmod ext2
-insmod btrfs
-insmod luks
+set timeout_style=menu
 
 search --no-floppy --fs-uuid --set=root ${BOOT_UUID}
 
-menuentry \"Conveyor OS (Universal Auto-Detect 2014-2026)\" {
-    linux /vmlinuz root=UUID=${BTRFS_UUID} rootflags=subvol=@root rd.luks.name=${LUKS_UUID}=conveyor_crypt rd.auto=1 rootwait usbcore.autosuspend=-1 iommu=pt rd.driver.blacklist=nouveau modprobe.blacklist=nouveau nvidia-drm.modeset=1 nvidia-drm.fbdev=1 quiet
+set conveyor_kargs="${BASE_KARGS}"
+# Unsigned NVIDIA modules cannot load under Secure Boot
+if [ "\$lockdown" = "y" ]; then
+    set conveyor_gpu="${OPEN_GPU_KARGS}"
+else
+    set conveyor_gpu="${NVIDIA_KARGS}"
+fi
+export conveyor_kargs conveyor_gpu
+
+menuentry "Conveyor OS" {
+    linux /vmlinuz \$conveyor_kargs \$conveyor_gpu iommu=pt quiet
     initrd /initramfs.img
 }
 
-menuentry \"Conveyor OS (Open NVIDIA driver: older cards or Secure Boot)\" {
-    linux /vmlinuz root=UUID=${BTRFS_UUID} rootflags=subvol=@root rd.luks.name=${LUKS_UUID}=conveyor_crypt rd.auto=1 rootwait usbcore.autosuspend=-1 iommu=pt modprobe.blacklist=nvidia,nvidia_drm,nvidia_modeset,nvidia_uvm quiet
+menuentry "Conveyor OS (open NVIDIA driver: older cards)" {
+    linux /vmlinuz \$conveyor_kargs ${OPEN_GPU_KARGS} iommu=pt quiet
     initrd /initramfs.img
 }
 
-menuentry \"Conveyor OS (Safe Hardware: JMS578 BOT + Safe Graphics)\" {
-    linux /vmlinuz root=UUID=${BTRFS_UUID} rootflags=subvol=@root rd.luks.name=${LUKS_UUID}=conveyor_crypt rd.auto=1 rootwait usbcore.autosuspend=-1 usb-storage.quirks=152d:0578:u modprobe.blacklist=nvidia,nvidia_drm,nvidia_modeset,nvidia_uvm nomodeset
+menuentry "Conveyor OS (safe mode: slow USB, basic graphics)" {
+    linux /vmlinuz \$conveyor_kargs usb-storage.quirks=152d:0578:u ${OPEN_GPU_KARGS} nomodeset
     initrd /initramfs.img
 }
-"
+EOF
 
-echo "$GRUB_CONFIG" > "$TARGET_MNT/boot/efi/EFI/BOOT/grub.cfg"
-echo "$GRUB_CONFIG" > "$TARGET_MNT/boot/efi/EFI/fedora/grub.cfg" 2>/dev/null || true
-echo "$GRUB_CONFIG" > "$TARGET_MNT/boot/efi/grub.cfg" 2>/dev/null || true
-mkdir -p "$TARGET_MNT/boot/grub2"
-echo "$GRUB_CONFIG" > "$TARGET_MNT/boot/grub2/grub.cfg" 2>/dev/null || true
+# fbx64.efi is left out on purpose: it would write boot entries into the firmware of every PC
+install_efi_dir() {
+    local name="$1" loader="$2" staging="$ESP_EFI/.conveyor-$1"
+    rm -rf "$staging"
+    mkdir -p "$staging"
+    cp --no-preserve=all "$EFI_SOURCE/shimx64.efi" "$staging/$loader"
+    cp --no-preserve=all "$EFI_SOURCE/grubx64.efi" "$staging/grubx64.efi"
+    cp --no-preserve=all "$EFI_SOURCE/mmx64.efi" "$staging/mmx64.efi"
+    cp --no-preserve=all "$GRUB_CONFIG_FILE" "$staging/grub.cfg"
+    sync
+    rm -rf "${ESP_EFI:?}/$name"
+    mv "$staging" "$ESP_EFI/$name"
+}
+
+mkdir -p "$ESP_EFI" "$BOOT_DIR/grub2"
+install_efi_dir fedora shimx64.efi
+install_efi_dir BOOT BOOTX64.EFI
+cp -f "$GRUB_CONFIG_FILE" "$BOOT_DIR/grub2/grub.cfg"
+rm -f "$TARGET_MNT/boot/efi/grub.cfg" "$GRUB_CONFIG_FILE"
+
+# Windows helpers go to the partition Windows can read
+WINDOWS_TOOLS="$TARGET_MNT/usr/share/conveyor/windows"
+SHARED_MOUNT=$(mktemp -d)
+if [[ -n "$SHARED_UUID" && -d "$WINDOWS_TOOLS" ]] && mount "$P3" "$SHARED_MOUNT"; then
+    mkdir -p "$SHARED_MOUNT/ConveyorOS"
+    cp --no-preserve=all "$WINDOWS_TOOLS"/* "$SHARED_MOUNT/ConveyorOS/"
+    umount "$SHARED_MOUNT"
+else
+    echo "Warning: could not copy the Windows boot helper to the shared partition." >&2
+fi
+rmdir "$SHARED_MOUNT"
 
 sync
 
-echo "=========================================================="
-echo "FINAL DEPLOYMENT & UEFI VERIFICATION:"
-echo "=========================================================="
-echo "Partition 1 (EFI):"
-ls -la "$TARGET_MNT/boot/efi/EFI/BOOT/" 2>/dev/null || ls -la "$TARGET_MNT/boot/efi/"
-echo "----------------------------------------------------------"
-echo "Partition 2 (/boot):"
-ls -la "$TARGET_MNT/boot/"
-echo "=========================================================="
+for dir in BOOT fedora; do
+    loader=shimx64.efi
+    [[ "$dir" == BOOT ]] && loader=BOOTX64.EFI
+    cmp -s "$EFI_SOURCE/shimx64.efi" "$ESP_EFI/$dir/$loader" || fatal "\\EFI\\$dir\\$loader was not written correctly"
+    cmp -s "$EFI_SOURCE/grubx64.efi" "$ESP_EFI/$dir/grubx64.efi" || fatal "\\EFI\\$dir\\grubx64.efi was not written correctly"
+    [[ -s "$ESP_EFI/$dir/grub.cfg" ]] || fatal "\\EFI\\$dir\\grub.cfg is missing"
+done
+cmp -s "$KERNEL_DIR/vmlinuz" "$BOOT_DIR/vmlinuz" || fatal "/boot/vmlinuz does not match the image"
+cmp -s "$KERNEL_DIR/initramfs.img" "$BOOT_DIR/initramfs.img" || fatal "/boot/initramfs.img does not match the image"
 
-if [[ -f "$TARGET_MNT/boot/efi/EFI/BOOT/BOOTX64.EFI" || -f "$TARGET_MNT/boot/efi/EFI/BOOT/bootx64.efi" ]]; then
-    echo ">>> SUCCESS: UEFI bootloader is confirmed present on Partition 1!"
-else
-    echo ">>> FATAL ERROR: BOOTX64.EFI was not created! Do not reboot yet." >&2
-    exit 1
-fi
-
-if [[ -f "$TARGET_MNT/boot/vmlinuz" && -f "$TARGET_MNT/boot/initramfs.img" ]]; then
-    echo ">>> SUCCESS: Kernel and Initramfs confirmed present on Partition 2!"
-else
-    echo ">>> WARNING: Kernel or initramfs not found at /boot root! Check file list above." >&2
-fi
-
+echo "=========================================================="
+echo "Boot chain verified: \\EFI\\BOOT\\BOOTX64.EFI, kernel ${IMAGE_KERNELS[0]}"
 echo "All installation steps completed successfully."
-echo "You can now safely reboot and select Intel SSD in your UEFI Boot Menu."
+echo "Boot it from the UEFI boot menu, or from Windows with ConveyorOS\\Boot-Conveyor-OS.cmd on the SHARED drive."
+echo "=========================================================="

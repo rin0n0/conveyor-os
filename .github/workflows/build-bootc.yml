@@ -121,9 +121,44 @@ jobs:
           path: vm-test/serial.log
           if-no-files-found: ignore
 
+  usb-boot-test:
+    needs: build
+    if: ${{ !inputs.skip_vm_test }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - name: Install test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 ovmf podman cryptsetup btrfs-progs dosfstools \
+            exfatprogs gdisk parted "linux-modules-extra-$(uname -r)"
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | sudo podman login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+
+      - name: Install to a virtual USB disk and boot it
+        run: sudo bash scripts/ci-usb-boot-test.sh "$REGISTRY/$IMAGE_NAME@${{ needs.build.outputs.digest }}"
+
+      - name: Upload boot logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: usb-serial-logs
+          path: usb-test/serial-*.log
+          if-no-files-found: ignore
+
   promote:
-    needs: [build, vm-test]
-    if: ${{ !cancelled() && needs.build.result == 'success' && (needs.vm-test.result == 'success' || (inputs.skip_vm_test && needs.vm-test.result == 'skipped')) }}
+    needs: [build, vm-test, usb-boot-test]
+    if: ${{ !cancelled() && needs.build.result == 'success' && ((needs.vm-test.result == 'success' && needs.usb-boot-test.result == 'success') || (inputs.skip_vm_test && needs.vm-test.result == 'skipped' && needs.usb-boot-test.result == 'skipped')) }}
     runs-on: ubuntu-latest
     steps:
       - name: Set up Docker Buildx

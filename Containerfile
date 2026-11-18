@@ -26,7 +26,8 @@ RUN git clone --depth 1 --branch "${LLAMA_CPP_VERSION}" https://github.com/ggml-
       -DLLAMA_BUILD_TESTS=OFF \
       -DGGML_BUILD_TESTS=OFF \
       -DLLAMA_BUILD_EXAMPLES=OFF \
-      -DLLAMA_BUILD_SERVER=ON && \
+      -DLLAMA_BUILD_SERVER=ON \
+      -DLLAMA_USE_PREBUILT_UI=OFF && \
     cmake --build build-llama --target llama-server -j"$(nproc)" && \
     mkdir -p /opt/ai-out/bin /opt/ai-out/lib64 && \
     install -m755 build-llama/bin/llama-server /opt/ai-out/bin/ && \
@@ -212,6 +213,12 @@ RUN systemctl set-default graphical.target && \
                      fstrim.timer \
                      NetworkManager.service && \
     systemctl --global enable pueued.service
+
+# Rebuild the initramfs so USB, keyboard and LUKS support are present on any PC
+RUN set -eux; \
+    kernel=$(find /usr/lib/modules -mindepth 1 -maxdepth 1 -type d -printf '%f\n'); \
+    DRACUT_NO_XATTR=1 dracut --force --no-hostonly --reproducible --zstd \
+      --kver "${kernel}" "/usr/lib/modules/${kernel}/initramfs.img"
 
 # Fail the build if a promised program or config does not actually work
 RUN /usr/local/libexec/conveyor-check-image.sh

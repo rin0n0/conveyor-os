@@ -49,6 +49,22 @@ compgen -G '/usr/share/vulkan/icd.d/nvidia*.json' >/dev/null \
     || compgen -G '/etc/vulkan/icd.d/nvidia*.json' >/dev/null \
     || fail "NVIDIA Vulkan driver not found"
 
+# Everything the installer needs to make the disk bootable on any UEFI PC
+for efi_file in shimx64.efi grubx64.efi mmx64.efi; do
+    [[ -s "/usr/lib/bootupd/updates/EFI/fedora/$efi_file" ]] || fail "EFI file missing: $efi_file"
+done
+[[ -s "/usr/lib/modules/$kernel/vmlinuz" ]] || fail "kernel missing"
+initramfs_files=$(lsinitrd "/usr/lib/modules/$kernel/initramfs.img" 2>/dev/null || true)
+for needed in usb-storage.ko uas.ko dm-crypt.ko btrfs.ko systemd-cryptsetup; do
+    grep -q "$needed" <<<"$initramfs_files" || fail "initramfs is missing: $needed"
+done
+if grep -Eq '/(nvidia|nouveau)[^/]*\.ko' <<<"$initramfs_files"; then
+    fail "GPU drivers must not be in the initramfs"
+fi
+for windows_file in Boot-Conveyor-OS.cmd Conveyor-Boot.ps1; do
+    [[ -s "/usr/share/conveyor/windows/$windows_file" ]] || fail "Windows helper missing: $windows_file"
+done
+
 check_llama_swap_profile() {
     local config="$1" port="$2" log models pid role
     log=$(mktemp)

@@ -31,10 +31,15 @@ sgdisk -n 4:0:-25GiB  -t 4:8309 -c 4:"CONVEYOR-LUKS"  "$DISK" # Leaves ~25 GiB u
 partprobe "$DISK"
 sleep 2
 
-P1="${DISK}1"
-P2="${DISK}2"
-P3="${DISK}3"
-P4="${DISK}4"
+udevadm settle 2>/dev/null || true
+
+# NVMe, MMC and loop devices name partitions with a "p": /dev/nvme0n1p1
+PART_PREFIX="$DISK"
+[[ "$DISK" =~ [0-9]$ ]] && PART_PREFIX="${DISK}p"
+P1="${PART_PREFIX}1"
+P2="${PART_PREFIX}2"
+P3="${PART_PREFIX}3"
+P4="${PART_PREFIX}4"
 
 mkfs.vfat -F 32 -n EFI "$P1"
 mkfs.ext4 -F -L BOOT "$P2"
@@ -46,7 +51,8 @@ else
     mkfs.vfat -F 32 -n SHARED "$P3"
 fi
 
-cryptsetup luksFormat --type luks2 --cipher aes-xts-plain64 --key-size 512 \
+# CONVEYOR_LUKS_BATCH skips the confirmation in the automated boot test
+cryptsetup luksFormat ${CONVEYOR_LUKS_BATCH:+--batch-mode} --type luks2 --cipher aes-xts-plain64 --key-size 512 \
     --hash sha256 --pbkdf argon2id --sector-size 4096 "$P4"
 cryptsetup open --allow-discards "$P4" conveyor_crypt
 
