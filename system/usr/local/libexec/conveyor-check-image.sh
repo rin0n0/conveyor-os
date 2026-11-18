@@ -55,9 +55,14 @@ for efi_file in shimx64.efi grubx64.efi mmx64.efi; do
 done
 [[ -s "/usr/lib/modules/$kernel/vmlinuz" ]] || fail "kernel missing"
 initramfs_files=$(lsinitrd "/usr/lib/modules/$kernel/initramfs.img" 2>/dev/null || true)
-for needed in usb-storage.ko uas.ko dm-crypt.ko btrfs.ko systemd-cryptsetup; do
-    grep -q "$needed" <<<"$initramfs_files" || fail "initramfs is missing: $needed"
+builtin_modules=$(cat "/usr/lib/modules/$kernel/modules.builtin")
+for needed in usb-storage uas dm-crypt btrfs; do
+    # A driver compiled into the kernel does not need a file in the initramfs
+    grep -q "/$needed\.ko" <<<"$initramfs_files" \
+        || grep -q "/$needed\.ko" <<<"$builtin_modules" \
+        || fail "initramfs is missing: $needed"
 done
+grep -q systemd-cryptsetup <<<"$initramfs_files" || fail "initramfs is missing: systemd-cryptsetup"
 if grep -Eq '/(nvidia|nouveau)[^/]*\.ko' <<<"$initramfs_files"; then
     fail "GPU drivers must not be in the initramfs"
 fi

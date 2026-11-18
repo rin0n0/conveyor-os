@@ -38,6 +38,8 @@ RUN git clone --depth 1 --branch "${LLAMA_CPP_VERSION}" https://github.com/ggml-
 RUN git clone --depth 1 --branch "${WHISPER_CPP_VERSION}" https://github.com/ggml-org/whisper.cpp.git && \
     cmake -S whisper.cpp -B build-whisper -G Ninja \
       -DCMAKE_BUILD_TYPE=Release \
+      -DBUILD_SHARED_LIBS=OFF \
+      -DGGML_NATIVE=OFF \
       -DWHISPER_BUILD_TESTS=OFF \
       -DWHISPER_BUILD_EXAMPLES=ON && \
     cmake --build build-whisper --target whisper-cli -j"$(nproc)" && \
