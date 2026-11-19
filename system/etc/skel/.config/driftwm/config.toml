@@ -4,7 +4,8 @@ mod_key = "super"
 autostart = [
     "waybar",
     "swaync",
-    "wl-paste --type text --watch cliphist store"
+    "wl-paste --type text --watch cliphist store",
+    "blueman-applet"
 ]
 
 [input.keyboard]
@@ -13,6 +14,8 @@ layout = "us,ru"
 [keybindings]
 "alt+shift"       = "switch-layout next"
 "mod+shift+s"     = "exec /usr/local/bin/conveyor-screenshot.sh"
+"mod+shift+b"     = "exec blueman-manager"
+"mod+shift+m"     = "spawn driftmap --toggle 2 242424cc"
 "mod+return"      = "spawn foot"
 "mod+d"           = "spawn fuzzel"
 "mod+space"       = "spawn fuzzel"

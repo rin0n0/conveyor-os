@@ -14,7 +14,21 @@ RUN dnf install -y --setopt=install_weak_deps=False \
 
 WORKDIR /build
 
-# Build llama.cpp with dynamic CPU dispatch (SSE4.2, AVX, AVX2, AVX-512) and Vulkan
+# CUDA 13 toolkit from NVIDIA's Fedora repository, for the optional CUDA backend.
+# CUDA 13 supports Turing (RTX 20xx / GTX 16xx) and newer: the same cards the NVIDIA
+# open kernel modules in this image support.
+ARG CUDA_VERSION=13.2
+RUN cuda_suffix="${CUDA_VERSION/./-}" && \
+    curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/fedora43/x86_64/cuda-fedora43.repo \
+      -o /etc/yum.repos.d/cuda.repo && \
+    dnf install -y --setopt=install_weak_deps=False \
+      "cuda-compiler-${cuda_suffix}" "cuda-cudart-devel-${cuda_suffix}" "libcublas-devel-${cuda_suffix}" \
+      "cuda-cccl-${cuda_suffix}" "cuda-driver-devel-${cuda_suffix}" "cuda-profiler-api-${cuda_suffix}" && \
+    dnf clean all
+
+# Build llama.cpp with dynamic CPU dispatch (SSE4.2, AVX, AVX2, AVX-512), Vulkan and CUDA.
+# Every backend is a separate library loaded at runtime; boot-gpu-detect picks the device.
+# CUDA targets: Turing 75, Ampere 86, Ada 89, Blackwell 120, plus PTX for newer GPUs.
 RUN git clone --depth 1 --branch "${LLAMA_CPP_VERSION}" https://github.com/ggml-org/llama.cpp.git && \
     cmake -S llama.cpp -B build-llama -G Ninja \
       -DCMAKE_BUILD_TYPE=Release \
@@ -22,6 +36,10 @@ RUN git clone --depth 1 --branch "${LLAMA_CPP_VERSION}" https://github.com/ggml-
       -DGGML_BACKEND_DL=ON \
       -DGGML_CPU_ALL_VARIANTS=ON \
       -DGGML_VULKAN=ON \
+      -DGGML_CUDA=ON \
+      -DCUDAToolkit_ROOT="/usr/local/cuda-${CUDA_VERSION}" \
+      -DCMAKE_CUDA_COMPILER="/usr/local/cuda-${CUDA_VERSION}/bin/nvcc" \
+      "-DCMAKE_CUDA_ARCHITECTURES=75-real;86-real;89-real;120a-real;89-virtual" \
       -DGGML_NATIVE=OFF \
       -DLLAMA_BUILD_TESTS=OFF \
       -DGGML_BUILD_TESTS=OFF \
@@ -32,7 +50,11 @@ RUN git clone --depth 1 --branch "${LLAMA_CPP_VERSION}" https://github.com/ggml-
     mkdir -p /opt/ai-out/bin /opt/ai-out/lib64 && \
     install -m755 build-llama/bin/llama-server /opt/ai-out/bin/ && \
     find build-llama -name "*.so*" -exec cp -P {} /opt/ai-out/lib64/ \; && \
-    find build-llama \( -name "libggml-cpu-*.so" -o -name "libggml-vulkan.so" \) -exec cp -P {} /opt/ai-out/bin/ \;
+    find build-llama \( -name "libggml-cpu-*.so" -o -name "libggml-vulkan.so" -o -name "libggml-cuda.so" \) \
+      -exec cp -P {} /opt/ai-out/bin/ \; && \
+    for cuda_lib in libcudart libcublas libcublasLt; do \
+      cp -P "/usr/local/cuda-${CUDA_VERSION}/targets/x86_64-linux/lib/${cuda_lib}".so.13* /opt/ai-out/lib64/; \
+    done
 
 # Build whisper.cpp for fast push-to-talk voice prompt transcription (0 MB VRAM)
 RUN git clone --depth 1 --branch "${WHISPER_CPP_VERSION}" https://github.com/ggml-org/whisper.cpp.git && \
@@ -75,6 +97,9 @@ ARG ZELLIJ_VERSION=v0.46.0
 ARG YAZI_VERSION=v26.9.1
 ARG CLIPHIST_VERSION=v0.7.0
 ARG OPENCODE_VERSION=v1.19.6
+ARG DRIFTMAP_VERSION=v1.0.0
+# diffview.nvim has no releases; this is the newest commit
+ARG DIFFVIEW_COMMIT=4516612fe98ff56ae0415a259ff6361a89419b0a
 
 RUN dnf install -y --setopt=install_weak_deps=False curl tar gzip unzip && dnf clean all
 WORKDIR /opt/tools
@@ -104,7 +129,15 @@ RUN set -euxo pipefail; \
     # opencode (baseline build also runs on older CPUs without AVX2)
     curl -fsSL "$gh/anomalyco/opencode/releases/download/${OPENCODE_VERSION}/opencode-linux-x64-baseline.tar.gz" | tar -xz -C /opt/tools/bin opencode; \
     rm -f /tmp/ast-grep.zip /tmp/yazi.zip; \
-    chmod +x /opt/tools/bin/*
+    chmod +x /opt/tools/bin/*; \
+    # Driftmap: minimap overlay for DriftWM (single Python file, GTK 4 + layer shell)
+    mkdir -p /opt/tools/lib; \
+    curl -fsSL "https://raw.githubusercontent.com/rywby-dot/driftwm-minimap/${DRIFTMAP_VERSION}/driftmap.py" \
+      -o /opt/tools/lib/driftmap.py; \
+    # diffview.nvim, installed as a Neovim package for every user
+    mkdir -p /opt/tools/nvim/diffview.nvim; \
+    curl -fsSL "https://codeload.github.com/sindrets/diffview.nvim/tar.gz/${DIFFVIEW_COMMIT}" \
+      | tar -xz -C /opt/tools/nvim/diffview.nvim --strip-components=1
 
 # Stage 4: Build NVIDIA open kernel modules for the exact kernel of the base image
 FROM quay.io/fedora/fedora-bootc:43 AS nvidia-builder
@@ -153,6 +186,8 @@ RUN echo "Fedora package refresh: ${REFRESH_DATE}" && \
     xdg-desktop-portal xdg-desktop-portal-gtk xdg-desktop-portal-gnome \
     flatpak distrobox bubblewrap podman zram-generator systemd-oomd-defaults nftables \
     NetworkManager-wifi NetworkManager-tui nm-connection-editor iputils usb_modeswitch usbutils pciutils vulkan-tools \
+    bluez bluez-obexd blueman \
+    python3-gobject python3-cairo gtk4 gtk4-layer-shell \
     gdisk exfatprogs \
     mesa-dri-drivers mesa-vulkan-drivers \
     python3 python3-pip python3.12 uv nodejs nodejs-npm pnpm \
@@ -189,6 +224,8 @@ RUN UV_TOOL_DIR=/usr/lib/conveyor/uv-tools \
 COPY --from=llama-builder /opt/ai-out/ /usr/local/
 COPY --from=rust-builder /opt/rust-out/ /
 COPY --from=tools-downloader /opt/tools/bin/ /usr/local/bin/
+COPY --from=tools-downloader /opt/tools/lib/driftmap.py /usr/local/lib/conveyor/driftmap.py
+COPY --from=tools-downloader /opt/tools/nvim/ /usr/share/nvim/site/pack/conveyor/start/
 RUN echo "/usr/local/lib64" > /etc/ld.so.conf.d/local-ai.conf && \
     echo "/usr/local/lib" >> /etc/ld.so.conf.d/local-ai.conf && \
     ldconfig
@@ -204,6 +241,7 @@ RUN chmod 0755 /usr/local/libexec/*.sh \
                /etc/NetworkManager/dispatcher.d/* && \
     chmod 0440 /etc/sudoers.d/* && \
     ln -sf conveyor-model.sh /usr/local/bin/conveyor-model && \
+    ln -sf conveyor-driftmap.sh /usr/local/bin/driftmap && \
     systemd-sysusers
 
 # Boot into the login screen and auto-enable required services
@@ -213,7 +251,8 @@ RUN systemctl set-default graphical.target && \
                      llama-swap.service \
                      nftables.service \
                      fstrim.timer \
-                     NetworkManager.service && \
+                     NetworkManager.service \
+                     bluetooth.service && \
     systemctl --global enable pueued.service
 
 # Rebuild the initramfs so USB, keyboard and LUKS support are present on any PC

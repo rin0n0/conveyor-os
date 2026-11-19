@@ -4,7 +4,8 @@
 # Changed files are backed up to ~/.config/conveyor/backup-v<old>-<timestamp>.
 set -euo pipefail
 
-CONFIG_VERSION=1
+# 1: terminal, keyboard layouts, clipboard, screenshots. 2: Bluetooth, minimap keys.
+CONFIG_VERSION=2
 SKEL_DIR=/etc/skel/.config
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}"
 STATE_DIR="$CONFIG_DIR/conveyor"

@@ -19,6 +19,7 @@ REQUIRED_COMMANDS=(
     python3 python3.12 uv node npm pnpm mise pueue pueued ast-grep
     gcc g++ make cmake gdb clang
     llama-server llama-swap whisper-cli aider opencode nvidia-smi
+    bluetoothctl blueman-manager blueman-applet driftmap
 )
 
 for cmd in "${REQUIRED_COMMANDS[@]}"; do
@@ -37,6 +38,20 @@ done
 # llama.cpp looks for its CPU and GPU backends next to the executable
 compgen -G '/usr/local/bin/libggml-cpu-*.so' >/dev/null || fail "llama.cpp CPU backends missing"
 [[ -e /usr/local/bin/libggml-vulkan.so ]] || fail "llama.cpp Vulkan backend missing"
+if [[ -e /usr/local/bin/libggml-cuda.so ]]; then
+    # libcuda.so.1 comes from the NVIDIA driver package, CUDA runtime libraries from the build
+    missing_cuda_libs=$(ldd /usr/local/bin/libggml-cuda.so 2>&1 | grep 'not found' || true)
+    [[ -z "$missing_cuda_libs" ]] || fail "llama.cpp CUDA backend cannot load: $missing_cuda_libs"
+else
+    fail "llama.cpp CUDA backend missing"
+fi
+
+# Neovim must load diffview.nvim; the minimap needs GTK 4 with layer shell
+nvim --headless -c 'lua if not pcall(require, "diffview") then vim.cmd("cquit 1") end' -c 'qall' >/dev/null 2>&1 \
+    || fail "diffview.nvim does not load in Neovim"
+python3 -c 'import gi, cairo; gi.require_version("Gtk", "4.0"); gi.require_version("Gtk4LayerShell", "1.0")' \
+    || fail "minimap dependencies (GTK 4, layer shell, cairo) are missing"
+[[ -s /usr/local/lib/conveyor/driftmap.py ]] || fail "minimap script missing"
 
 kernel=$(find /usr/lib/modules -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | head -n1)
 for module in nvidia nvidia_drm nvidia_modeset nvidia_uvm nouveau; do

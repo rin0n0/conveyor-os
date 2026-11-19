@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
-# Toggles interactive DriftWM 2D minimap overlay
+# Super+M in DriftWM: start the minimap, or show/hide it when it is already running.
 set -euo pipefail
 
-# If driftwm-settings or custom minimap overlay is running, toggle it
-if pgrep -x "driftwm-minimap" >/dev/null 2>&1; then
-    pkill -x "driftwm-minimap"
-elif command -v driftwm-minimap >/dev/null 2>&1; then
-    driftwm-minimap &
-elif command -v driftwm-settings >/dev/null 2>&1; then
-    driftwm-settings &
-else
-    # Fallback notification if overlay helper isn't running
-    notify-send "DriftWM" "2D Canvas: Use Trackpad pinch-to-zoom or Super+Minus / Super+Equal"
+if pgrep -f '/usr/local/lib/conveyor/driftmap.py' >/dev/null 2>&1; then
+    exec driftmap --show
 fi
+
+if [[ "${XDG_CURRENT_DESKTOP:-}" != *driftwm* && -z "${DRIFTWM_SOCKET:-}" ]] && ! pgrep -x driftwm >/dev/null 2>&1; then
+    notify-send -a "Мини-карта" "Мини-карта работает только в DriftWM" || true
+    exit 0
+fi
+
+driftmap >/dev/null 2>&1 &

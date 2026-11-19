@@ -97,8 +97,9 @@ LUKS2: `aes-xts-plain64`, ключ 512 бит, `argon2id`, сектор 4096 б�
 
 1. Ждёт появления DRM-устройства (до 5 секунд, кроме `nomodeset`).
 2. Разбирает вывод `vulkaninfo`: тип устройства (дискретное или встроенное), версию Vulkan (нужна 1.2+) и самую большую область `DEVICE_LOCAL` памяти у дискретной карты.
-3. Записывает `/run/gpu-profile.env`: `GPU_BACKEND`, `VRAM_GIB`, `RAM_GIB`, `WAYLAND_RENDER_MODE`, `LLAMA_PROFILE`.
-4. Делает ссылку `/run/llama-swap-active.yaml` на профиль моделей: при 7+ ГБ видеопамяти `config-8gb-vram-32gb-ram.yaml`, иначе `config-cpu-only.yaml`. Встроенная графика считается как 0 ГБ, потому что делит обычную память.
+3. Проверяет CUDA: модуль `nvidia` загружен, `nvidia-smi` сообщает версию CUDA драйвера 13 или выше, и у каждой видеокарты вычислительная возможность 7.5+ (Turing и новее). Если всё так, выбирается бэкенд `cuda`, а объём видеопамяти берётся из `nvidia-smi`.
+4. Записывает `/run/gpu-profile.env`: `GPU_BACKEND` (`cuda`, `vulkan` или `cpu`), `VRAM_GIB`, `RAM_GIB`, `LLAMA_DEVICES`, `WAYLAND_RENDER_MODE`, `LLAMA_PROFILE`.
+5. Создаёт `/run/llama-swap-active.yaml` как копию профиля моделей: при 7+ ГБ видеопамяти `config-8gb-vram-32gb-ram.yaml`, иначе `config-cpu-only.yaml`. Встроенная графика считается как 0 ГБ, потому что делит обычную память. В режиме CUDA в каждую команду `llama-server` добавляется `--device CUDA0` (или список всех видеокарт), иначе `llama.cpp` задействовал бы ту же карту ещё и через Vulkan.
 
 При любой ошибке скрипт оставляет рабочий профиль CPU и не мешает загрузке.
 
@@ -125,7 +126,8 @@ LUKS2: `aes-xts-plain64`, ключ 512 бит, `argon2id`, сектор 4096 б�
 ### Видеокарта NVIDIA
 
 - Открытые модули ядра NVIDIA собираются при сборке образа отдельной стадией `nvidia-builder`: `akmod-nvidia` из репозитория negativo17 под точное ядро базового образа. Если `kernel-devel` уже пропал с зеркал, он берётся из Koji.
-- В итоговый образ ставятся `kmod-nvidia`, `nvidia-driver` и `nvidia-driver-cuda` (Vulkan, CUDA-библиотеки, `nvidia-smi`).
+- В итоговый образ ставятся `kmod-nvidia`, `nvidia-driver` и `nvidia-driver-cuda` (Vulkan, `libcuda`, `nvidia-smi`).
+- Модели считаются через CUDA 13 (подробнее в разделе про локальные модели). CUDA 13 поддерживает Turing и новее, то есть ровно те карты, на которых работает драйвер образа. Карты старше (GTX 9xx/10xx) этот драйвер не поддерживает: на них используется `nouveau` и Vulkan, а CUDA 12 для них потребовала бы ещё и старый драйвер 580, которого в образе нет.
 - Запрет `nouveau` из пакетов NVIDIA удаляется. Выбор между драйверами делается параметрами ядра в меню GRUB, чтобы на ПК со старой NVIDIA оставался рабочий вариант.
 - Модули не подписаны: при включённом Secure Boot они не загрузятся. Тогда автоматически используется `nouveau` или простой кадровый буфер.
 - `system/etc/nvidia/nvidia-application-profiles-rc.d/…json` ограничивает пул видеопамяти у оболочек Niri, Sway и DriftWM. Без этого они держат лишние сотни мегабайт VRAM, нужные моделям.
@@ -146,7 +148,9 @@ llama-server (llama.cpp, Vulkan + все варианты CPU)
 /var/lib/models/active-<роль>.gguf  → ссылка на реальный файл
 ```
 
-- `llama.cpp` собирается с `GGML_BACKEND_DL` и `GGML_CPU_ALL_VARIANTS`: одна сборка сама выбирает инструкции процессора (SSE4.2 … AVX-512) и Vulkan во время работы. Бэкенды `libggml-cpu-*.so` и `libggml-vulkan.so` лежат рядом с `llama-server` в `/usr/local/bin`.
+- `llama.cpp` собирается с `GGML_BACKEND_DL` и `GGML_CPU_ALL_VARIANTS`: одна сборка сама выбирает инструкции процессора (SSE4.2 … AVX-512) во время работы, а GPU-бэкенды подключаются как отдельные библиотеки. Бэкенды `libggml-cpu-*.so`, `libggml-vulkan.so` и `libggml-cuda.so` лежат рядом с `llama-server` в `/usr/local/bin`.
+- CUDA-бэкенд собран CUDA 13.2 из репозитория NVIDIA для Fedora 43 под архитектуры Turing (75), Ampere (86, это RTX 3060 Ti), Ada (89) и Blackwell (120), плюс PTX для будущих карт. Библиотеки времени выполнения (`libcudart`, `libcublas`, `libcublasLt`) лежат в `/usr/local/lib64`, `libcuda` даёт драйвер.
+- Какой бэкенд использовать, решает `boot-gpu-detect` при загрузке: CUDA, если она годится, иначе Vulkan, иначе процессор. Ничего настраивать вручную не нужно.
 - `llama-swap.service` — системная служба (от root), слушает только `127.0.0.1:8080`, ограничение памяти `MemoryHigh=24G`.
 - Роли одинаковы в обоих профилях, поэтому клиенты не нужно перенастраивать при смене ПК:
 
@@ -170,9 +174,9 @@ llama-server (llama.cpp, Vulkan + все варианты CPU)
 
 | Стадия | Что делает | Закреплённые версии |
 |---|---|---|
-| `llama-builder` | Собирает `llama-server` и `whisper-cli` | `llama.cpp v1.0.0`, `whisper.cpp v1.9.5` |
+| `llama-builder` | Собирает `llama-server` (CPU, Vulkan, CUDA) и `whisper-cli` | `llama.cpp v1.0.0`, `whisper.cpp v1.9.5`, CUDA 13.2 |
 | `rust-builder` | Собирает DriftWM под `x86-64-v2` | `driftwm v0.21.0` |
-| `tools-downloader` | Скачивает готовые программы | `llama-swap 273`, `jj v0.47.1`, `mise v2026.11.9`, `ast-grep 0.51.3`, `pueue v4.0.4`, `zellij v0.46.0`, `yazi v26.9.1`, `cliphist v0.7.0`, `opencode v1.19.6` (baseline, работает без AVX2) |
+| `tools-downloader` | Скачивает готовые программы | `llama-swap 273`, `jj v0.47.1`, `mise v2026.11.9`, `ast-grep 0.51.3`, `pueue v4.0.4`, `zellij v0.46.0`, `yazi v26.9.1`, `cliphist v0.7.0`, `opencode v1.19.6` (baseline, работает без AVX2), мини-карта `driftwm-minimap v1.0.0`, `diffview.nvim` (коммит `4516612`) |
 | `nvidia-builder` | Собирает модули NVIDIA под ядро образа | последний драйвер negativo17 на дату сборки |
 | финальная | `fedora-bootc:43` + пакеты + всё выше + конфиги | `aider-chat 0.86.2` (на Python 3.12) |
 
@@ -190,7 +194,9 @@ llama-server (llama.cpp, Vulkan + все варианты CPU)
 `conveyor-check-image.sh` проверяет, что:
 
 - все обещанные команды существуют, а `llama-server`, `whisper-cli`, `aider`, `opencode` и `llama-swap` действительно запускаются;
-- бэкенды `llama.cpp` лежат рядом с исполняемым файлом;
+- бэкенды `llama.cpp` лежат рядом с исполняемым файлом, а CUDA-бэкенд находит все свои библиотеки;
+- Neovim загружает `diffview.nvim`, для мини-карты есть GTK 4, layer shell и cairo;
+- есть команды Bluetooth (`bluetoothctl`, `blueman-manager`, `blueman-applet`) и `driftmap`;
 - есть модули `nvidia`, `nvidia_drm`, `nvidia_modeset`, `nvidia_uvm` и `nouveau`, `nouveau` не запрещён, есть Vulkan-драйвер NVIDIA;
 - оба профиля `llama-swap` стартуют и отдают роли `coder`, `fast`, `think`, `embed`;
 - конфиги Niri, Waybar и DriftWM корректны, все скрипты без синтаксических ошибок;
@@ -269,7 +275,7 @@ llama-server (llama.cpp, Vulkan + все варианты CPU)
 | `zellij/layouts/conveyor.kdl` | Раскладка терминала для проекта: агенты, очередь, git |
 | `mise/config.toml` | Кэши сборки и адреса локального API (см. раздел про `mise`) |
 
-`/etc/skel` копируется только при создании пользователя. Поэтому изменения доставляет `conveyor-user-migrate.sh`: при входе он сравнивает конфиги DriftWM, Niri, Sway и Waybar с образом и заменяет отличающиеся. Прежние версии сохраняются в `~/.config/conveyor/backup-v<версия>-<время>/`. Это происходит один раз на каждую версию конфигов (`CONFIG_VERSION` в скрипте, сейчас 1).
+`/etc/skel` копируется только при создании пользователя. Поэтому изменения доставляет `conveyor-user-migrate.sh`: при входе он сравнивает конфиги DriftWM, Niri, Sway и Waybar с образом и заменяет отличающиеся. Прежние версии сохраняются в `~/.config/conveyor/backup-v<версия>-<время>/`. Это происходит один раз на каждую версию конфигов (`CONFIG_VERSION` в скрипте, сейчас 2: версия 1 принесла терминал, раскладки, буфер обмена и скриншоты, версия 2 — Bluetooth и клавиши мини-карты).
 
 **`system/usr/`** — копируется в `/usr` образа
 
@@ -283,7 +289,8 @@ llama-server (llama.cpp, Vulkan + все варианты CPU)
 | `local/bin/conveyor-net-auto.sh` | Автоподбор профиля сети колледжа по ответу шлюза |
 | `local/bin/conveyor-live-stt.sh` | Диктовка: запись → распознавание → вставка текста |
 | `local/bin/conveyor-comfyui.sh` | Установка и запуск ComfyUI |
-| `local/bin/driftmap-toggle.sh` | Мини-карта DriftWM (если установлена) |
+| `local/bin/conveyor-driftmap.sh` (+ ссылка `driftmap`) | Запуск мини-карты DriftWM из `/usr/local/lib/conveyor/driftmap.py` |
+| `local/bin/driftmap-toggle.sh` | `Super+M`: запустить мини-карту или показать и скрыть её |
 | `local/bin/waybar-*.sh` | Модули панели: агенты, `pueue`, VRAM |
 | `local/libexec/boot-gpu-detect.sh` | Определение железа |
 | `local/libexec/conveyor-user-migrate.sh` | Перенос новых конфигов в домашнюю папку |
@@ -292,6 +299,7 @@ llama-server (llama.cpp, Vulkan + все варианты CPU)
 | `local/libexec/conveyor-check-image.sh` | Проверка образа при сборке |
 | `lib/systemd/user/pueued.service` | Демон очереди задач `pueue`, включён для всех пользователей |
 | `lib/bootc/kargs.d/10-conveyor-nvidia.toml` | Параметры ядра для установки через bootc |
+| `share/nvim/site/plugin/conveyor-diffview.lua` | Настройка `diffview.nvim` для всех пользователей (без иконок) |
 | `share/conveyor/windows/` | Помощник загрузки из Windows |
 | `share/wayland-sessions/` | Пункты сессий на экране входа |
 
@@ -382,7 +390,8 @@ sudo bash scripts/repair-and-install.sh /dev/sdX
    systemctl status llama-swap
    ```
 
-   На домашнем ПК ожидается `GPU_BACKEND=vulkan`, `VRAM_GIB=7` или `8` и профиль `config-8gb-vram-32gb-ram.yaml`.
+   На домашнем ПК ожидается `GPU_BACKEND=cuda`, `VRAM_GIB=8`, `LLAMA_DEVICES=CUDA0` и профиль `config-8gb-vram-32gb-ram.yaml`. Если там `vulkan` или `cpu`, драйвер NVIDIA не загрузился: проверьте, что Secure Boot выключен.
+7. **Bluetooth:** `Super+Shift+B` или пункт `BT` на панели открывают менеджер устройств. Наушники подключаются там же, звук идёт через PipeWire.
 7. **Скачайте и назначьте модели** (подробно ниже).
 8. **Поставьте нужные программы** через Flatpak или Distrobox (подробно ниже).
 9. **Создайте проект:** `Super+P` → «➕ Новый проект».
@@ -407,7 +416,9 @@ sudo bash scripts/repair-and-install.sh /dev/sdX
 | Центр уведомлений | — | `Super+Shift+N` | `Super+Shift+N` |
 | Диктовка | `` Super+` `` | — | — |
 | Масштаб холста | `Super+=` / `Super+-` / `Super+0` | — | — |
-| Мини-карта | `Super+M` | — | — |
+| Мини-карта: показать / скрыть | `Super+M` | — | — |
+| Мини-карта: крупная интерактивная | `Super+Shift+M` | — | — |
+| Bluetooth | `Super+Shift+B` | `Super+Shift+B` | `Super+Shift+B` |
 | Обзор | — | `Super+O` | — |
 | Рабочие столы | — | `Super+1…5` | `Super+1…5` |
 | Перечитать конфиг | `Super+Shift+C` | — | `Super+Shift+C` |
@@ -488,8 +499,9 @@ aider --model openai/coder
 
 - **Разработка:** `git`, `jj`, `lazygit`, `delta`, `difftastic`, `gcc`/`g++`, `clang`, `make`, `cmake`, `gdb`, Python 3 и 3.12, `uv`, Node.js, `npm`, `pnpm`, `mise`, `sccache`, `ccache`, `ast-grep`.
 - **Терминал:** `foot`, `zellij`, `tmux`, `neovim`, `micro`, `nano`, `yazi`, `ripgrep`, `fd`, `btop`, `nvtop`, `jq`.
-- **Графические программы:** Firefox, Thunar, `pavucontrol`, `nm-connection-editor`.
+- **Графические программы:** Firefox, Thunar, `pavucontrol`, `nm-connection-editor`, `blueman` (Bluetooth).
 - **Агенты:** `agy` (ставится при входе), `aider`, `opencode`.
+- **Neovim:** `diffview.nvim` — просмотр изменений git: `:DiffviewOpen`, история файла `:DiffviewFileHistory %`, закрыть `:DiffviewClose`.
 - **Модели:** `llama-server`, `llama-swap`, `whisper-cli`.
 - **Контейнеры и песочницы:** Podman, Distrobox, bubblewrap, Flatpak.
 - **Прочее:** `pueue` (очередь фоновых задач), `cliphist`, `grim`, `slurp`.
@@ -537,7 +549,8 @@ conveyor-comfyui.sh
 | `Security Violation` / `Access Denied` при старте | Разрешить сторонние сертификаты UEFI или отключить Secure Boot |
 | Зависание после выбора пункта, ошибки USB | Пункт `safe mode` |
 | Чёрный экран на NVIDIA | Пункт `open NVIDIA driver`, затем `safe mode` |
-| Нет ускорения моделей | `cat /run/gpu-profile.env`, `nvidia-smi`. Проверить, что Secure Boot выключен |
+| Нет ускорения моделей | `cat /run/gpu-profile.env`, `nvidia-smi`. Проверить, что Secure Boot выключен. Если `GPU_BACKEND=cuda`, но модель медленная: `journalctl -u llama-swap` и строка `--device` в `/run/llama-swap-active.yaml` |
+| Bluetooth не видит адаптер | `systemctl status bluetooth`, `rfkill list`. Если адаптер заблокирован: `rfkill unblock bluetooth` |
 | Модель не отвечает | `journalctl -u llama-swap -f`, `conveyor-model list`: есть ли ссылка и существует ли файл |
 | Нет `agy` | `~/.local/state/conveyor/user-setup.log`, перезайти в сессию |
 | Сломались настройки оболочки после обновления | Старые файлы лежат в `~/.config/conveyor/backup-v*` |
@@ -556,7 +569,8 @@ conveyor-comfyui.sh
 
 ### Есть, но не проверено на реальном железе
 
-- Работа драйвера NVIDIA на RTX 3060 Ti и выбор профиля GPU.
+- Работа драйвера NVIDIA на RTX 3060 Ti, выбор CUDA и профиля GPU. Логика выбора проверена на смоделированных ответах `nvidia-smi`, а сама CUDA в CI без видеокарты не запускается.
+- Bluetooth и мини-карта DriftWM: в CI проверено только, что всё установлено и зависимости на месте.
 - Автоматический переход на открытый драйвер при включённом Secure Boot (переменная GRUB `$lockdown`).
 - Windows-помощник `Boot-Conveyor-OS.cmd`: проверен только синтаксис, потому что запуск меняет настройки прошивки ПК.
 - Автоподбор сети колледжа, диктовка, ComfyUI.
@@ -570,14 +584,13 @@ conveyor-comfyui.sh
 | Скачивание моделей из каталога в один клик | Вручную через браузер + `conveyor-model` | Этап 3 |
 | Команды на русском через локальную модель (`сделай …`) | — | Этап 4 |
 | Загрузка на Legacy BIOS (CSM) и 32-битном UEFI | Только 64-битный UEFI | Не планировалось |
-| Bluetooth | Пакеты не установлены | — |
 | Блокировка экрана, клавиши громкости и яркости | Не настроены | — |
 | Агент polkit для графических запросов прав | Не установлен, права через `sudo` | — |
-| Мини-карта DriftWM (`driftwm-minimap`, `driftwm-settings`) | Не установлены, `Super+M` только показывает подсказку | — |
-| Плагин Diffview для `nvim` и `llmtop` в раскладке `zellij` | Не установлены, эти панели пустые | — |
+| Графический редактор настроек DriftWM (`driftwm-settings`) | Не установлен, настройки правятся в `~/.config/driftwm/config.toml` | — |
+| `llmtop` в раскладке `zellij` | Не установлен, эта панель пустая | — |
 | `gitleaks`, `ruff`, `biome` для `verify-gates.sh` | Не установлены, проверки пропускаются | Ставить через `uv` / `npm` |
 | Снимки Btrfs | Подтом `@snapshots` создан, но не используется | — |
-| Сборка CUDA для `llama.cpp` | Только Vulkan. На фирменном драйвере это обычно в пределах 5–15% от CUDA по генерации | Сравнить на реальной карте |
+| CUDA 12 для GTX 9xx/10xx | Эти карты работают через `nouveau` и Vulkan. Нужен был бы старый драйвер 580 | По необходимости |
 
 ### Что нужно делать вручную
 

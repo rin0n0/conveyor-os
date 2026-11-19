@@ -11,6 +11,7 @@ input * {
 
 exec swaync
 exec wl-paste --type text --watch cliphist store
+exec blueman-applet
 
 # Output setup: solid dark background to avoid loading wallpaper textures into limited VRAM
 output * bg #101014 solid_color
@@ -23,6 +24,7 @@ bindsym $mod+p exec /usr/local/bin/project-switcher.sh
 bindsym $mod+v exec sh -c 'cliphist list | fuzzel --dmenu | cliphist decode | wl-copy'
 bindsym $mod+Shift+n exec swaync-client -t -sw
 bindsym $mod+Shift+s exec /usr/local/bin/conveyor-screenshot.sh
+bindsym $mod+Shift+b exec blueman-manager
 
 bindsym $mod+q kill
 bindsym $mod+f fullscreen toggle
