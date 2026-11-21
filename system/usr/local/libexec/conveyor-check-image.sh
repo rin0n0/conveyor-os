@@ -84,6 +84,7 @@ fi
 for windows_file in Boot-Conveyor-OS.cmd Conveyor-Boot.ps1; do
     [[ -s "/usr/share/conveyor/windows/$windows_file" ]] || fail "Windows helper missing: $windows_file"
 done
+[[ -s "/usr/share/conveyor/docs/INDEX.md" ]] || fail "User manual INDEX.md missing"
 
 check_llama_swap_profile() {
     local config="$1" port="$2" log models pid role

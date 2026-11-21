@@ -378,15 +378,22 @@ install_efi_dir BOOT BOOTX64.EFI
 cp -f "$GRUB_CONFIG_FILE" "$BOOT_DIR/grub2/grub.cfg"
 rm -f "$TARGET_MNT/boot/efi/grub.cfg" "$GRUB_CONFIG_FILE"
 
-# Windows helpers go to the partition Windows can read
+# Windows helpers and documentation go to the partition Windows can read
 WINDOWS_TOOLS="$TARGET_MNT/usr/share/conveyor/windows"
+DOCS_SOURCE="$TARGET_MNT/usr/share/conveyor/docs"
 SHARED_MOUNT=$(mktemp -d)
-if [[ -n "$SHARED_UUID" && -d "$WINDOWS_TOOLS" ]] && mount "$P3" "$SHARED_MOUNT"; then
-    mkdir -p "$SHARED_MOUNT/ConveyorOS"
-    cp --no-preserve=all "$WINDOWS_TOOLS"/* "$SHARED_MOUNT/ConveyorOS/"
+if [[ -n "$SHARED_UUID" ]] && mount "$P3" "$SHARED_MOUNT"; then
+    if [[ -d "$WINDOWS_TOOLS" ]]; then
+        mkdir -p "$SHARED_MOUNT/ConveyorOS"
+        cp --no-preserve=all "$WINDOWS_TOOLS"/* "$SHARED_MOUNT/ConveyorOS/"
+    fi
+    if [[ -d "$DOCS_SOURCE" ]]; then
+        mkdir -p "$SHARED_MOUNT/ConveyorOS/Руководство"
+        cp -rn --no-preserve=all "$DOCS_SOURCE"/* "$SHARED_MOUNT/ConveyorOS/Руководство/" 2>/dev/null || true
+    fi
     umount "$SHARED_MOUNT"
 else
-    echo "Warning: could not copy the Windows boot helper to the shared partition." >&2
+    echo "Warning: could not copy the Windows boot helper or docs to the shared partition." >&2
 fi
 rmdir "$SHARED_MOUNT"
 

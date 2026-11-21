@@ -242,6 +242,8 @@ RUN chmod 0755 /usr/local/libexec/*.sh \
     chmod 0440 /etc/sudoers.d/* && \
     ln -sf conveyor-model.sh /usr/local/bin/conveyor-model && \
     ln -sf conveyor-driftmap.sh /usr/local/bin/driftmap && \
+    ln -sf conveyor-help.sh /usr/local/bin/conveyor-help && \
+    ln -sf conveyor-help.sh /usr/local/bin/conveyor-docs && \
     systemd-sysusers
 
 # Boot into the login screen and auto-enable required services

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Conveyor OS - Руководство пользователя
+Comment=Интерактивная документация и справочник по системе Conveyor OS
+Exec=foot -e conveyor-help
+Icon=help-browser
+Terminal=false
+Type=Application
+Categories=Documentation;System;Utility;
+Keywords=help;manual;docs;документация;мануал;справочник;модели;

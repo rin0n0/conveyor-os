@@ -29,6 +29,10 @@ flathub_ready() {
 
 agy_ready && flathub_ready && exit 0
 
+if [[ -d "/usr/share/conveyor/docs" && ! -e "$HOME/Справочник-Conveyor" ]]; then
+    ln -s /usr/share/conveyor/docs "$HOME/Справочник-Conveyor" 2>/dev/null || true
+fi
+
 # Let the desktop and its notification daemon start first
 sleep 15
 

@@ -50,6 +50,7 @@ spawn-at-startup "blueman-applet"
 
 binds {
     Mod+Return { spawn "foot"; }
+    Mod+F1 { spawn "foot" "-e" "conveyor-help"; }
     Mod+Shift+S { spawn "/usr/local/bin/conveyor-screenshot.sh"; }
     Mod+Shift+B { spawn "blueman-manager"; }
     Mod+D { spawn "fuzzel"; }
