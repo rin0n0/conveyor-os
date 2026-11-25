@@ -19,7 +19,7 @@ REQUIRED_COMMANDS=(
     python3 python3.12 uv node npm pnpm mise pueue pueued ast-grep
     gcc g++ make cmake gdb clang
     llama-server llama-swap whisper-cli aider opencode nvidia-smi
-    bluetoothctl blueman-manager blueman-applet driftmap
+    bluetoothctl blueman-manager blueman-applet driftmap conveyor-panel
 )
 
 for cmd in "${REQUIRED_COMMANDS[@]}"; do
@@ -30,7 +30,7 @@ export HOME=/tmp/conveyor-check-home
 mkdir -p "$HOME"
 
 # These must start, which also proves their shared libraries resolve.
-for check in "llama-server --version" "whisper-cli --help" "aider --version" "opencode --version" "llama-swap -version"; do
+for check in "llama-server --version" "whisper-cli --help" "aider --version" "opencode --version" "llama-swap -version" "conveyor-panel --version"; do
     # shellcheck disable=SC2086
     timeout 60 $check >/dev/null 2>&1 || fail "does not run: $check"
 done

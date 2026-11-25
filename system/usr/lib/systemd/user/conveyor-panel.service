@@ -1,0 +1,11 @@
+[Unit]
+Description=Conveyor OS Operator Web Panel (http://127.0.0.1:7070)
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/conveyor-panel --listen 127.0.0.1:7070
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

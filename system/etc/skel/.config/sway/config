@@ -21,6 +21,7 @@ output * bg #101014 solid_color
 bindsym $mod+Return exec $term
 bindsym $mod+e exec thunar
 bindsym $mod+F1 exec $term -e conveyor-help
+bindsym $mod+F2 exec /usr/local/bin/conveyor-panel-open.sh
 bindsym $mod+n exec nm-connection-editor
 bindsym $mod+grave exec /usr/local/bin/conveyor-live-stt.sh
 bindsym $mod+d exec $menu
@@ -73,7 +74,7 @@ bindsym $mod+b splith
 bindsym $mod+Shift+v splitv
 bindsym $mod+s layout stacking
 bindsym $mod+w layout tabbed
-bindsym $mod+e layout toggle split
+bindsym $mod+t layout toggle split
 
 # Reload / Exit
 bindsym $mod+Shift+c reload

@@ -278,6 +278,7 @@ if [[ -d "$TARGET_MNT/etc/skel" ]]; then
     cp -rn "$TARGET_MNT/etc/skel/." "$TARGET_MNT/var/home/conveyor/" 2>/dev/null || true
 fi
 chown 1000:1000 "$TARGET_MNT/var/home/conveyor" 2>/dev/null || true
+chown 1000:1000 "$TARGET_MNT/var/home/conveyor"/.bash* 2>/dev/null || true
 if [[ -d "$TARGET_MNT/var/home/conveyor/.config" ]]; then
     chown -R 1000:1000 "$TARGET_MNT/var/home/conveyor/.config" 2>/dev/null || true
 fi
@@ -416,9 +417,12 @@ rmdir "$SHARED_MOUNT"
 # mode. Label last, with the image's own tools, so this works from any live system.
 echo "Applying SELinux security contexts..."
 mount -t proc proc "$TARGET_MNT/proc"
+SETFILES_EXCLUDES=(-e /proc -e /sys -e /dev -e /run -e /tmp -e /var/tmp -e /var/lib/containers -e /boot/efi)
+if [[ -d "$TARGET_MNT/var/home/conveyor/.local/share/containers" ]]; then
+    SETFILES_EXCLUDES+=(-e /var/home/conveyor/.local/share/containers)
+fi
 if chroot "$TARGET_MNT" setfiles -F -m \
-    -e /proc -e /sys -e /dev -e /run -e /tmp -e /var/tmp \
-    -e /var/lib/containers -e /boot/efi -e /var/home/conveyor/.local/share/containers \
+    "${SETFILES_EXCLUDES[@]}" \
     /etc/selinux/targeted/contexts/files/file_contexts /; then
     rm -f "$TARGET_MNT/.autorelabel"
 else

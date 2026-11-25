@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Conveyor OS — Панель оператора
+Comment=Локальная веб-панель управления пакетами и моделями (http://127.0.0.1:7070)
+Exec=/usr/local/bin/conveyor-panel-open.sh
+Icon=preferences-system
+Terminal=false
+Type=Application
+Categories=System;Settings;PackageManager;
+Keywords=panel;apps;flatpak;models;llm;панель;пакеты;модели;

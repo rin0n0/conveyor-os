@@ -52,6 +52,7 @@ binds {
     Mod+Return { spawn "foot"; }
     Mod+E { spawn "thunar"; }
     Mod+F1 { spawn "foot" "-e" "conveyor-help"; }
+    Mod+F2 { spawn "/usr/local/bin/conveyor-panel-open.sh"; }
     Mod+N { spawn "nm-connection-editor"; }
     Mod+Grave { spawn "/usr/local/bin/conveyor-live-stt.sh"; }
     Mod+Shift+S { spawn "/usr/local/bin/conveyor-screenshot.sh"; }

@@ -6,6 +6,7 @@
     "modules-left": [
         "niri/workspaces",
         "sway/workspaces",
+        "custom/panel",
         "custom/files",
         "custom/project"
     ],
@@ -30,6 +31,11 @@
         "disable-scroll": true,
         "all-outputs": true,
         "format": "{name}"
+    },
+    "custom/panel": {
+        "format": "⚙ Панель",
+        "tooltip-format": "Открыть панель оператора (Super+F2)",
+        "on-click": "/usr/local/bin/conveyor-panel-open.sh"
     },
     "custom/files": {
         "format": "📂 Файлы",

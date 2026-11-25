@@ -9,7 +9,8 @@ set -euo pipefail
 # 3: Super+F1 user manual.
 # 4: Super+E Thunar, Waybar cleanup & style, fuzzel foot -e, Zellij layout fix.
 # 5: Wayland dbus activation env, mise cloud-safe config.
-CONFIG_VERSION=5
+# 6: Operator Web Panel (Super+F2, Waybar button, Sway Super+E fix).
+CONFIG_VERSION=6
 SKEL_DIR=/etc/skel/.config
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}"
 STATE_DIR="$CONFIG_DIR/conveyor"

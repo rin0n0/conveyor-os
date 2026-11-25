@@ -139,6 +139,18 @@ RUN set -euxo pipefail; \
     curl -fsSL "https://codeload.github.com/sindrets/diffview.nvim/tar.gz/${DIFFVIEW_COMMIT}" \
       | tar -xz -C /opt/tools/nvim/diffview.nvim --strip-components=1
 
+# Stage 3b: Build Conveyor OS Operator Web Panel (React + Vite embedded in static Go binary)
+FROM registry.fedoraproject.org/fedora:43 AS panel-builder
+
+RUN dnf install -y --setopt=install_weak_deps=False golang nodejs nodejs-npm && dnf clean all
+
+WORKDIR /build/panel
+COPY panel/ /build/panel/
+
+RUN cd /build/panel/web && npm ci && npm run build && \
+    cd /build/panel && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /opt/panel-out/conveyor-panel .
+
 # Stage 4: Build NVIDIA open kernel modules for the exact kernel of the base image
 FROM quay.io/fedora/fedora-bootc:43 AS nvidia-builder
 
@@ -224,6 +236,7 @@ RUN UV_TOOL_DIR=/usr/lib/conveyor/uv-tools \
 COPY --from=llama-builder /opt/ai-out/ /usr/local/
 COPY --from=rust-builder /opt/rust-out/ /
 COPY --from=tools-downloader /opt/tools/bin/ /usr/local/bin/
+COPY --from=panel-builder /opt/panel-out/conveyor-panel /usr/local/bin/conveyor-panel
 COPY --from=tools-downloader /opt/tools/lib/driftmap.py /usr/local/lib/conveyor/driftmap.py
 COPY --from=tools-downloader /opt/tools/nvim/ /usr/share/nvim/site/pack/conveyor/start/
 RUN echo "/usr/local/lib64" > /etc/ld.so.conf.d/local-ai.conf && \
@@ -256,7 +269,7 @@ RUN systemctl set-default graphical.target && \
                      fstrim.timer \
                      NetworkManager.service \
                      bluetooth.service && \
-    systemctl --global enable pueued.service
+    systemctl --global enable pueued.service conveyor-panel.service
 
 # Rebuild the initramfs so USB, keyboard and LUKS support are present on any PC
 RUN set -eux; \
