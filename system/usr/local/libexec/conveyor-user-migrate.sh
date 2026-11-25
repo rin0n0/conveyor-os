@@ -4,8 +4,11 @@
 # Changed files are backed up to ~/.config/conveyor/backup-v<old>-<timestamp>.
 set -euo pipefail
 
-# 1: terminal, keyboard layouts, clipboard, screenshots. 2: Bluetooth, minimap keys. 3: Super+F1 user manual.
-CONFIG_VERSION=3
+# 1: terminal, keyboard layouts, clipboard, screenshots.
+# 2: Bluetooth, minimap keys.
+# 3: Super+F1 user manual.
+# 4: Super+E Thunar, Waybar cleanup & style, fuzzel foot -e, Zellij layout fix.
+CONFIG_VERSION=4
 SKEL_DIR=/etc/skel/.config
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}"
 STATE_DIR="$CONFIG_DIR/conveyor"
@@ -15,6 +18,9 @@ MANAGED_FILES=(
     niri/config.kdl
     sway/config
     waybar/config.jsonc
+    waybar/style.css
+    fuzzel/fuzzel.ini
+    zellij/layouts/conveyor.kdl
 )
 
 current_version=0

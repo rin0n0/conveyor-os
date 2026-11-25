@@ -23,12 +23,15 @@ window#waybar {
     border-bottom: 2px solid #7aa2f7;
 }
 
+#custom-files,
 #custom-project,
 #custom-agents,
 #custom-pueue,
 #custom-vram,
 #cpu,
 #memory,
+#network,
+#bluetooth,
 #pulseaudio,
 #clock,
 #tray {
@@ -36,6 +39,17 @@ window#waybar {
     margin: 3px 2px;
     background: #24283b;
     border-radius: 6px;
+}
+
+#custom-files:hover,
+#custom-project:hover,
+#network:hover,
+#bluetooth:hover {
+    background: #333954;
+}
+
+#network.disconnected {
+    color: #f7768e;
 }
 
 #custom-vram.warning {

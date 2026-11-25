@@ -28,6 +28,9 @@ case "$ARG" in
     keys|hotkeys|клавиши)
         exec "${EDITOR:-micro}" "$DOCS_DIR/01-быстрый-старт/03-горячие-клавиши.md"
         ;;
+    projects|project|проекты)
+        exec "${EDITOR:-micro}" "$DOCS_DIR/03-программы-и-инструменты/06-работа-с-проектами.md"
+        ;;
     stt|voice|голос)
         exec "${EDITOR:-micro}" "$DOCS_DIR/02-локальные-модели-и-ии/04-распознавание-голоса.md"
         ;;

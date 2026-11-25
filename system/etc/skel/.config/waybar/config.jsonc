@@ -6,6 +6,7 @@
     "modules-left": [
         "niri/workspaces",
         "sway/workspaces",
+        "custom/files",
         "custom/project"
     ],
     "modules-center": [
@@ -16,6 +17,7 @@
         "custom/vram",
         "memory",
         "cpu",
+        "network",
         "bluetooth",
         "pulseaudio",
         "clock",
@@ -29,11 +31,17 @@
         "all-outputs": true,
         "format": "{name}"
     },
+    "custom/files": {
+        "format": "📂 Файлы",
+        "tooltip-format": "Открыть файловый менеджер Thunar (Super+E)",
+        "on-click": "thunar"
+    },
     "custom/project": {
         "format": "📁 {}",
-        "exec": "cat \"$XDG_RUNTIME_DIR/conveyor-current-project\" 2>/dev/null || echo 'No Project'",
+        "exec": "cat \"$XDG_RUNTIME_DIR/conveyor-current-project\" 2>/dev/null || echo 'Проекты'",
         "interval": 3,
-        "tooltip": true
+        "tooltip-format": "Переключатель проектов (Super+P)",
+        "on-click": "/usr/local/bin/project-switcher.sh"
     },
     "custom/agents": {
         "format": "{}",
@@ -63,6 +71,14 @@
     "memory": {
         "format": " {used:0.1f}G/{total:0.1f}G",
         "interval": 2
+    },
+    "network": {
+        "format-wifi": "󰖩 {essid}",
+        "format-ethernet": "󰈀 {ipaddr}",
+        "format-disconnected": "󰖪 Нет сети",
+        "tooltip-format": "{ifname}: {ipaddr}/{cidr} (ЛКМ: профили, ПКМ: настройки)",
+        "on-click": "/usr/local/bin/net-switch.sh",
+        "on-click-right": "nm-connection-editor"
     },
     "bluetooth": {
         "format": "BT {status}",

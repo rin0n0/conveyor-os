@@ -204,7 +204,7 @@ RUN --mount=type=bind,from=nvidia-builder,source=/out,target=/tmp/nvidia \
     mkdir -p /var/roothome /var/lib/alternatives; \
     curl -fsSL https://negativo17.org/repos/fedora-nvidia.repo -o /etc/yum.repos.d/fedora-nvidia.repo; \
     dnf install -y --setopt=install_weak_deps=False \
-      /tmp/nvidia/kmod-nvidia-*.rpm "nvidia-driver-${driver}" "nvidia-driver-cuda-${driver}"; \
+      /tmp/nvidia/kmod-nvidia-*.rpm "nvidia-driver-${driver}" "nvidia-driver-cuda-${driver}" nvidia-modprobe; \
     mkdir -p /usr/lib/modprobe.d /etc/modprobe.d; \
     find /usr/lib/modprobe.d /etc/modprobe.d -type f \
       -exec sed -i -E '/^[[:space:]]*(blacklist|install)[[:space:]]+nouveau/d' {} +; \

@@ -10,28 +10,21 @@ layout {
         }
     }
 
-    tab name="1:agents" focus=true {
+    tab name="1:code" focus=true {
         pane split_direction="vertical" {
-            pane size="55%" name="agy-or-opencode"
-            pane split_direction="horizontal" size="45%" {
-                pane name="local-moe-queue" command="pueue" {
-                    args "status"
-                }
-                pane name="llmtop-vram"
-            }
+            pane size="60%" name="editor-or-agent"
+            pane size="40%" name="terminal"
         }
     }
 
-    tab name="2:review-git" {
+    tab name="2:git" {
         pane split_direction="vertical" {
-            pane size="60%" name="neovim-diffview" command="nvim" {
-                args "-c" "DiffviewOpen"
-            }
-            pane size="40%" name="lazygit" command="lazygit"
+            pane size="55%" name="git-shell"
+            pane size="45%" name="lazygit" command="lazygit"
         }
     }
 
-    tab name="3:gates-logs" {
-        pane name="quality-gates"
+    tab name="3:files" {
+        pane name="yazi" command="yazi"
     }
 }

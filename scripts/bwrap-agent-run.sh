@@ -25,6 +25,9 @@ BWRAP_ARGS=(
     --ro-bind /sbin /sbin
     --ro-bind /etc/resolv.conf /etc/resolv.conf
     --ro-bind /etc/ssl /etc/ssl
+    --ro-bind-try /etc/pki /etc/pki
+    --ro-bind-try /etc/passwd /etc/passwd
+    --ro-bind-try /etc/group /etc/group
     --ro-bind-try "$HOME/.local/share/mise" "$HOME/.local/share/mise"
     --ro-bind-try "$HOME/.local/share/pnpm" "$HOME/.local/share/pnpm"
     --ro-bind-try "$HOME/.cache/uv" "$HOME/.cache/uv"

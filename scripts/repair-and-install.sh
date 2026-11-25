@@ -267,9 +267,9 @@ if [[ -d "$TARGET_MNT/etc/skel" ]]; then
 fi
 chown -R 1000:1000 "$TARGET_MNT/var/home/conveyor" 2>/dev/null || true
 
-# Ensure tuigreet cache directory exists
+# Ensure tuigreet cache directory is owned by greetd (matches tmpfiles.d/greetd.conf)
 mkdir -p "$TARGET_MNT/var/cache/tuigreet"
-chown -R 1000:1000 "$TARGET_MNT/var/cache/tuigreet" 2>/dev/null || true
+chroot "$TARGET_MNT" chown -R greetd:greetd /var/cache/tuigreet 2>/dev/null || true
 
 # Step 6: Configuration files (/etc/fstab and /etc/crypttab)
 echo "[6/7] Writing persistent fstab and crypttab..."

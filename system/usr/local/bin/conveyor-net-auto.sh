@@ -1,64 +1,80 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
 # Conveyor OS: College Multi-Subnet Auto-Detector & Switcher
 # Probes known static gateways via ARP/Ping and auto-activates the correct classroom profile.
 
-# Find primary active Ethernet interface
-IFACE=$(nmcli -t -f DEVICE,TYPE device status | grep ':ethernet$' | cut -d: -f1 | head -n1 || true)
-if [[ -z "$IFACE" ]]; then
-    # Fallback to Wi-Fi if no Ethernet
-    IFACE=$(nmcli -t -f DEVICE,TYPE device status | grep ':wifi$' | cut -d: -f1 | head -n1 || true)
+LOCK_FILE="/run/conveyor-net-auto.lock"
+STAMP_FILE="/run/conveyor-net-auto.stamp"
+COOLDOWN_SEC=10
+
+# Prevent concurrent runs or dispatcher recursion loops
+if [[ -w /run ]]; then
+    exec 9>"$LOCK_FILE"
+    flock -n 9 || exit 0
+    if [[ -f "$STAMP_FILE" ]]; then
+        last=$(cat "$STAMP_FILE" 2>/dev/null || echo 0)
+        now=$(date +%s)
+        if (( now - last < COOLDOWN_SEC )); then
+            exit 0
+        fi
+    fi
+    date +%s >"$STAMP_FILE"
 fi
 
+log() {
+    echo "[conveyor-net-auto] $*"
+    command -v logger >/dev/null 2>&1 && logger -t conveyor-net-auto "$*" 2>/dev/null || true
+}
+
+# Find primary Ethernet interface (with carrier preferred)
+IFACE=$(nmcli -t -f DEVICE,TYPE,STATE device status 2>/dev/null \
+    | awk -F: '$2 == "ethernet" && $3 != "unavailable" {print $1; exit}')
 if [[ -z "$IFACE" ]]; then
-    echo "No Ethernet or Wi-Fi device found."
+    IFACE=$(nmcli -t -f DEVICE,TYPE device status 2>/dev/null | awk -F: '$2 == "ethernet" {print $1; exit}')
+fi
+if [[ -z "$IFACE" ]]; then
+    log "No Ethernet device found."
     exit 0
 fi
 
-echo "Probing network environments on $IFACE..."
+# If current connection already reaches the internet, do not disturb it
+if ping -c 1 -W 1 -I "$IFACE" 1.1.1.1 >/dev/null 2>&1; then
+    log "Interface $IFACE already has internet access; keeping current profile."
+    exit 0
+fi
 
-# Read all configured NetworkManager profiles with static IPv4 gateways
-PROFILES=$(nmcli -t -f NAME,TYPE,IPV4.GATEWAY,IPV4.METHOD connection show)
+log "Probing saved static profiles on $IFACE..."
 
 FOUND_PROFILE=""
+while IFS=: read -r name type; do
+    [[ "$type" == "802-3-ethernet" || "$type" == "ethernet" ]] || continue
+    [[ -n "$name" ]] || continue
 
-# Check each static profile's gateway via fast ARP ping (50-200ms Layer-2 probe)
-while IFS=: read -r name type gateway method; do
-    [[ "$type" == "802-3-ethernet" || "$type" == "ethernet" || "$type" == "wifi" || "$type" == "802-11-wireless" ]] || continue
-    [[ "$method" == "manual" ]] || continue
-    [[ -n "$gateway" ]] || continue
+    method=$(nmcli -g ipv4.method connection show "$name" 2>/dev/null | head -n1 || true)
+    gateway=$(nmcli -g ipv4.gateway connection show "$name" 2>/dev/null | head -n1 || true)
+    [[ "$method" == "manual" && -n "$gateway" && "$gateway" != "--" ]] || continue
 
-    echo "Testing gateway $gateway for profile '$name'..."
+    log "Testing gateway $gateway for profile '$name'..."
     if arping -c 1 -w 1 -I "$IFACE" "$gateway" >/dev/null 2>&1 || ping -c 1 -W 1 -I "$IFACE" "$gateway" >/dev/null 2>&1; then
-        echo ">>> Gateway $gateway responded! Matching profile: $name"
+        log "Gateway $gateway responded! Matching profile: $name"
         FOUND_PROFILE="$name"
         break
     fi
-done <<< "$PROFILES"
+done < <(nmcli -t -f NAME,TYPE connection show 2>/dev/null)
 
 if [[ -n "$FOUND_PROFILE" ]]; then
-    echo "Activating profile '$FOUND_PROFILE'..."
-    nmcli connection up "$FOUND_PROFILE" >/dev/null 2>&1 || true
-    
-    # Check internet reachability
-    if curl -s --connect-timeout 2 http://connectivity-check.ubuntu.com >/dev/null 2>&1 || ping -c 1 -W 2 1.1.1.1 >/dev/null 2>&1; then
-        STATUS_MSG="Интернет доступен"
-    else
-        STATUS_MSG="Шлюз доступен, но внешний интернет закрыт"
-    fi
-
-    echo "Network connected: $FOUND_PROFILE ($STATUS_MSG)"
-    if command -v notify-send >/dev/null 2>&1; then
-        notify-send -a "Conveyor Network" "Сеть: $FOUND_PROFILE" "$STATUS_MSG" || true
-    fi
+    log "Activating profile '$FOUND_PROFILE'..."
+    nmcli connection up "$FOUND_PROFILE" ifname "$IFACE" >/dev/null 2>&1 || nmcli connection up "$FOUND_PROFILE" >/dev/null 2>&1 || true
 else
-    echo "No static college gateway responded. Falling back to DHCP/Auto profile..."
-    DHCP_PROFILE=$(nmcli -t -f NAME,IPV4.METHOD connection show | grep ':auto$' | cut -d: -f1 | head -n1 || true)
-    if [[ -n "$DHCP_PROFILE" ]]; then
-        nmcli connection up "$DHCP_PROFILE" >/dev/null 2>&1 || true
-        if command -v notify-send >/dev/null 2>&1; then
-            notify-send -a "Conveyor Network" "Сеть: DHCP / Авто" "Используется динамический IP" || true
+    log "No static gateway responded. Looking for DHCP/Auto Ethernet profile..."
+    while IFS=: read -r name type; do
+        [[ "$type" == "802-3-ethernet" || "$type" == "ethernet" ]] || continue
+        method=$(nmcli -g ipv4.method connection show "$name" 2>/dev/null | head -n1 || true)
+        if [[ "$method" == "auto" ]]; then
+            log "Activating DHCP profile '$name'..."
+            nmcli connection up "$name" ifname "$IFACE" >/dev/null 2>&1 || true
+            break
         fi
-    fi
+    done < <(nmcli -t -f NAME,TYPE connection show 2>/dev/null)
 fi

@@ -1,28 +1,24 @@
 #!/usr/bin/env bash
-# Live agent status monitor (agy, opencode, claude, aider)
+# Live CLI coding agent status monitor (hidden when no agents are running)
 set -euo pipefail
 
-RUNNING_AGENTS=0
+# Match exact binary names to avoid false positives from shell wrappers or unrelated processes
+EXACT_COUNT=$(pgrep -xc 'agy|opencode|claude' 2>/dev/null || true)
+EXACT_COUNT=${EXACT_COUNT:-0}
+AIDER_COUNT=$(pgrep -fc '/bin/aider([[:space:]]|$)' 2>/dev/null || true)
+AIDER_COUNT=${AIDER_COUNT:-0}
+
+RUNNING_AGENTS=$(( EXACT_COUNT + AIDER_COUNT ))
 WAITING_HUMAN=0
 
-# Check process table for active CLI agent instances
-# pgrep prints 0 and exits non-zero when nothing matches
-RUNNING_AGENTS=$(pgrep -fc 'agy|opencode|claude|aider' 2>/dev/null || true)
-RUNNING_AGENTS=${RUNNING_AGENTS:-0}
-
-# Check if any agent has flagged a pending human decision
-if [ -f /run/agent-waiting-human ]; then
+if [[ -f /run/agent-waiting-human ]]; then
     WAITING_HUMAN=1
 fi
 
-CLASS=""
 if (( WAITING_HUMAN > 0 )); then
-    CLASS="waiting"
-    TEXT="🤖 ⚠ AGENT WAITING HUMAN"
+    printf '{"text":"🤖 ⚠ AGENT WAITING","class":"waiting","tooltip":"Agent waiting for confirmation"}\n'
 elif (( RUNNING_AGENTS > 0 )); then
-    TEXT="🤖 ${RUNNING_AGENTS} active"
+    printf '{"text":"🤖 %d active","class":"","tooltip":"Active CLI coding agents (agy, opencode, aider, claude)"}\n' "$RUNNING_AGENTS"
 else
-    TEXT="🤖 Idle"
+    echo '{"text":""}'
 fi
-
-printf '{"text":"%s","class":"%s","tooltip":"Active coding agents"}\n' "$TEXT" "$CLASS"
