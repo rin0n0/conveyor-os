@@ -8,7 +8,8 @@ set -euo pipefail
 # 2: Bluetooth, minimap keys.
 # 3: Super+F1 user manual.
 # 4: Super+E Thunar, Waybar cleanup & style, fuzzel foot -e, Zellij layout fix.
-CONFIG_VERSION=4
+# 5: Wayland dbus activation env, mise cloud-safe config.
+CONFIG_VERSION=5
 SKEL_DIR=/etc/skel/.config
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}"
 STATE_DIR="$CONFIG_DIR/conveyor"
@@ -21,6 +22,7 @@ MANAGED_FILES=(
     waybar/style.css
     fuzzel/fuzzel.ini
     zellij/layouts/conveyor.kdl
+    mise/config.toml
 )
 
 current_version=0

@@ -86,25 +86,26 @@ assign_model() {
             echo ">>> УСПЕХ: Роль [$role] теперь указывает на $(basename "$abs_src")"
             echo ">>> Сервис llama-swap будет использовать эту модель при следующем запросе к '$role'."
             ;;
-        comfy-checkpoint)
-            local target_dir="$SHARED_COMFY/checkpoints"
-            mkdir -p "$target_dir"
-            if [[ "$abs_src" != "$target_dir/"* ]]; then
-                ln -sf "$abs_src" "$target_dir/$(basename "$abs_src")"
+        comfy-checkpoint|comfy-lora)
+            local subdir="checkpoints"
+            [[ "$role" == "comfy-lora" ]] && subdir="loras"
+            local target_dir="$SHARED_COMFY/$subdir"
+            mkdir -p "$target_dir" 2>/dev/null || true
+
+            # exFAT (/mnt/shared) does not support symlinks; only copy into shared or symlink inside Btrfs ~/comfyui
+            if [[ "$abs_src" != "$target_dir/"* && "$mode" == "copy" ]]; then
+                echo "Копирование файла в $target_dir (exFAT не поддерживает симлинки)..."
+                cp -v "$abs_src" "$target_dir/$(basename "$abs_src")"
+            elif [[ "$abs_src" != "$target_dir/"* && ! -d "$COMFY_DIR" ]]; then
+                echo "Примечание: exFAT (/mnt/shared) не поддерживает симлинки."
+                echo "Файл оставлен в $abs_src; для общего хранения скопируйте его с режимом 'copy' или в $target_dir."
             fi
-            if [[ -d "$COMFY_DIR/checkpoints" ]]; then
-                ln -sf "$abs_src" "$COMFY_DIR/checkpoints/$(basename "$abs_src")"
+
+            if [[ -d "$COMFY_DIR" ]]; then
+                mkdir -p "$COMFY_DIR/$subdir"
+                ln -sfn "$abs_src" "$COMFY_DIR/$subdir/$(basename "$abs_src")"
             fi
-            echo ">>> УСПЕХ: Чекпоинт $(basename "$abs_src") зарегистрирован в ComfyUI!"
-            ;;
-        comfy-lora)
-            local target_dir="$SHARED_COMFY/loras"
-            mkdir -p "$target_dir"
-            ln -sf "$abs_src" "$target_dir/$(basename "$abs_src")"
-            if [[ -d "$COMFY_DIR/loras" ]]; then
-                ln -sf "$abs_src" "$COMFY_DIR/loras/$(basename "$abs_src")"
-            fi
-            echo ">>> УСПЕХ: LoRA $(basename "$abs_src") зарегистрирована в ComfyUI!"
+            echo ">>> УСПЕХ: $(basename "$abs_src") зарегистрирован как [$role] для ComfyUI!"
             ;;
         *)
             echo "Неизвестный сценарий: $role" >&2

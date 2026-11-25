@@ -1,4 +1,6 @@
 # Global mise configuration (all CAS caches remain inside @home for Btrfs hardlinks)
+# Note: local llama-swap OpenAI-compatible router listens at http://127.0.0.1:8080/v1
+# (we do not override OPENAI_BASE_URL / ANTHROPIC_BASE_URL globally so cloud APIs still work).
 [env]
 UV_LINK_MODE = "hardlink"
 UV_CACHE_DIR = "{{env.HOME}}/.cache/uv"
@@ -6,8 +8,6 @@ SCCACHE_CACHE_SIZE = "8G"
 RUSTC_WRAPPER = "sccache"
 CCACHE_MAXSIZE = "4G"
 PLAYWRIGHT_BROWSERS_PATH = "{{env.HOME}}/.cache/ms-playwright"
-ANTHROPIC_BASE_URL = "http://127.0.0.1:8080"
-OPENAI_BASE_URL = "http://127.0.0.1:8080/v1"
 
 [settings]
 experimental = true

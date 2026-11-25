@@ -240,6 +240,7 @@ RUN chmod 0755 /usr/local/libexec/*.sh \
                /usr/local/bin/*.sh \
                /etc/NetworkManager/dispatcher.d/* && \
     chmod 0440 /etc/sudoers.d/* && \
+    chmod 0644 /etc/polkit-1/rules.d/*.rules && \
     ln -sf conveyor-model.sh /usr/local/bin/conveyor-model && \
     ln -sf conveyor-driftmap.sh /usr/local/bin/driftmap && \
     ln -sf conveyor-help.sh /usr/local/bin/conveyor-help && \

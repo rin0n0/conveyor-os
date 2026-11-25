@@ -9,6 +9,7 @@ input * {
     xkb_options "grp:alt_shift_toggle,caps:escape"
 }
 
+exec dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
 exec swaync
 exec wl-paste --type text --watch cliphist store
 exec blueman-applet

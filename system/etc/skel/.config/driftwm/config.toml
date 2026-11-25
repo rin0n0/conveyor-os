@@ -2,6 +2,7 @@
 mod_key = "super"
 
 autostart = [
+    "dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP",
     "waybar",
     "swaync",
     "wl-paste --type text --watch cliphist store",

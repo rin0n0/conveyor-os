@@ -245,11 +245,23 @@ if grep -q "^root:" "$TARGET_MNT/etc/shadow"; then
     sed -i "s|^root:[^:]*:|root:!:|" "$TARGET_MNT/etc/shadow"
 fi
 
-# Ensure conveyor is in wheel group
-if ! grep -Eq '^wheel:[^:]*:[^:]*:(.*,)?conveyor(,|$)' "$TARGET_MNT/etc/group"; then
-    sed -i '/^wheel:/ s/$/,conveyor/' "$TARGET_MNT/etc/group"
-    sed -i '/^wheel:/ s/:,/:/' "$TARGET_MNT/etc/group"
-fi
+# Ensure conveyor is in wheel, video and render groups
+for grp in wheel video render; do
+    if grep -q "^${grp}:" "$TARGET_MNT/etc/group" 2>/dev/null; then
+        if ! grep -Eq "^${grp}:[^:]*:[^:]*:(.*,)?conveyor(,|$)" "$TARGET_MNT/etc/group"; then
+            sed -i "/^${grp}:/ s/\$/,conveyor/" "$TARGET_MNT/etc/group"
+            sed -i "/^${grp}:/ s/:,/:/" "$TARGET_MNT/etc/group"
+        fi
+    fi
+done
+
+# Ensure subuid/subgid ranges exist for rootless Podman and Distrobox
+for subfile in subuid subgid; do
+    touch "$TARGET_MNT/etc/$subfile"
+    if ! grep -q "^conveyor:" "$TARGET_MNT/etc/$subfile"; then
+        echo "conveyor:100000:65536" >> "$TARGET_MNT/etc/$subfile"
+    fi
+done
 
 # sudo requires the operator password
 mkdir -p "$TARGET_MNT/etc/sudoers.d"
@@ -260,12 +272,15 @@ chmod 0440 "$TARGET_MNT/etc/sudoers.d/wheel"
 chown root:10 "$TARGET_MNT/var/lib/models"
 chmod 2775 "$TARGET_MNT/var/lib/models"
 
-# Initialize conveyor home directory from /etc/skel
+# Initialize conveyor home directory from /etc/skel without clobbering rootless container UIDs
 mkdir -p "$TARGET_MNT/var/home/conveyor"
 if [[ -d "$TARGET_MNT/etc/skel" ]]; then
     cp -rn "$TARGET_MNT/etc/skel/." "$TARGET_MNT/var/home/conveyor/" 2>/dev/null || true
 fi
-chown -R 1000:1000 "$TARGET_MNT/var/home/conveyor" 2>/dev/null || true
+chown 1000:1000 "$TARGET_MNT/var/home/conveyor" 2>/dev/null || true
+if [[ -d "$TARGET_MNT/var/home/conveyor/.config" ]]; then
+    chown -R 1000:1000 "$TARGET_MNT/var/home/conveyor/.config" 2>/dev/null || true
+fi
 
 # Ensure tuigreet cache directory is owned by greetd (matches tmpfiles.d/greetd.conf)
 mkdir -p "$TARGET_MNT/var/cache/tuigreet"
@@ -403,7 +418,7 @@ echo "Applying SELinux security contexts..."
 mount -t proc proc "$TARGET_MNT/proc"
 if chroot "$TARGET_MNT" setfiles -F -m \
     -e /proc -e /sys -e /dev -e /run -e /tmp -e /var/tmp \
-    -e /var/lib/containers -e /boot/efi \
+    -e /var/lib/containers -e /boot/efi -e /var/home/conveyor/.local/share/containers \
     /etc/selinux/targeted/contexts/files/file_contexts /; then
     rm -f "$TARGET_MNT/.autorelabel"
 else

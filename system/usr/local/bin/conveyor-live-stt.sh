@@ -28,7 +28,7 @@ if [[ -f "$PID_FILE" ]]; then
 
             # Inject text directly into active Wayland window via wtype
             if command -v wtype >/dev/null 2>&1; then
-                wtype -M ctrl -k v -m ctrl 2>/dev/null || wtype "$TRANSCRIPT" 2>/dev/null || true
+                wtype -- "$TRANSCRIPT" 2>/dev/null || true
             fi
             notify-send -a "Antigravity STT" -t 2000 "Готово" "$TRANSCRIPT"
         else
